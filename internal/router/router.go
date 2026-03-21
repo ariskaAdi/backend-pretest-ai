@@ -1,14 +1,36 @@
 package router
 
-import "github.com/gofiber/fiber/v2"
+import (
+	"github.com/gofiber/fiber/v2"
+
+	"backend-pretest-ai/internal/handler"
+	"backend-pretest-ai/internal/middleware"
+	"backend-pretest-ai/internal/repository"
+	"backend-pretest-ai/internal/service"
+)
 
 func Setup(app *fiber.App) {
+	// --- Wire dependencies ---
+	userRepo := repository.NewUserRepository()
+	userSvc := service.NewUserService(userRepo)
+	userHandler := handler.NewUserHandler(userSvc)
+
 	api := app.Group("/api/v1")
 
-	// health check
+	// Health check
 	api.Get("/health", func(c *fiber.Ctx) error {
 		return c.JSON(fiber.Map{"status": "ok"})
 	})
 
-	// TODO: register handler routes di sini
+	// --- Auth routes (public) ---
+	auth := api.Group("/auth")
+	auth.Post("/register", userHandler.Register)
+	auth.Post("/verify-otp", userHandler.VerifyOTP)
+	auth.Post("/login", userHandler.Login)
+	auth.Post("/logout", middleware.Auth(), userHandler.Logout)
+
+	// --- User routes (protected) ---
+	user := api.Group("/user", middleware.Auth())
+	user.Post("/email/request-update", userHandler.RequestUpdateEmail)
+	user.Post("/email/verify-update", userHandler.VerifyUpdateEmail)
 }
