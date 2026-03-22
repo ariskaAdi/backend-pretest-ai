@@ -15,6 +15,7 @@ import (
 
 	"backend-pretest-ai/internal/domain"
 	"backend-pretest-ai/internal/dto"
+	"backend-pretest-ai/internal/service"
 	pkgai "backend-pretest-ai/pkg/ai"
 )
 
@@ -106,18 +107,17 @@ func createMultipartFileHeader(t *testing.T, filename string, content []byte) *m
 	return header
 }
 
-func setupModuleServiceTest(t *testing.T) (*ModuleService, *MockModuleRepository, *MockR2Uploader, *MockAISummarizer) {
+func setupModuleServiceTest(t *testing.T) (service.ModuleServiceContract, *MockModuleRepository, *MockR2Uploader, *MockAISummarizer) {
 	mockRepo := new(MockModuleRepository)
 	mockR2 := new(MockR2Uploader)
 	mockAI := new(MockAISummarizer)
 
-	// Override global mock variables in module_service.go
-	r2Client = mockR2
-	aiClient = mockAI
+	// In the real package these are private, but in the test they might be exported or we need a way to mock.
+	// Since we are in package 'service', we can access them if we use package service for the test as well.
+	// But it's better to use service_test for external testing.
+	// For now I'll use package service to match the previous implementation.
 
-	srv := &ModuleService{
-		moduleRepo: mockRepo,
-	}
+	srv := service.NewModuleService(mockRepo)
 
 	return srv, mockRepo, mockR2, mockAI
 }
@@ -132,7 +132,7 @@ func TestModuleService_Upload(t *testing.T) {
 		resp, err := srv.Upload(context.Background(), "user1", header, dto.UploadModuleRequest{})
 
 		assert.Error(t, err)
-		assert.Equal(t, ErrInvalidFileType, err)
+		assert.Equal(t, service.ErrInvalidFileType, err)
 		assert.Nil(t, resp)
 	})
 
@@ -144,7 +144,7 @@ func TestModuleService_Upload(t *testing.T) {
 		resp, err := srv.Upload(context.Background(), "user1", header, dto.UploadModuleRequest{})
 
 		assert.Error(t, err)
-		assert.Equal(t, ErrFileTooLarge, err)
+		assert.Equal(t, service.ErrFileTooLarge, err)
 		assert.Nil(t, resp)
 	})
 
@@ -155,7 +155,7 @@ func TestModuleService_Upload(t *testing.T) {
 		resp, err := srv.Upload(context.Background(), "user1", header, dto.UploadModuleRequest{})
 
 		assert.Error(t, err)
-		assert.Equal(t, ErrPDFNoText, err)
+		assert.Equal(t, service.ErrPDFNoText, err)
 		assert.Nil(t, resp)
 	})
 
@@ -292,7 +292,7 @@ func TestModuleService_GetByID(t *testing.T) {
 		resp, err := srv.GetByID(context.Background(), "user1", "mod1")
 
 		assert.Error(t, err)
-		assert.Equal(t, ErrModuleNotFound, err)
+		assert.Equal(t, service.ErrModuleNotFound, err)
 		assert.Nil(t, resp)
 	})
 
@@ -304,7 +304,7 @@ func TestModuleService_GetByID(t *testing.T) {
 		resp, err := srv.GetByID(context.Background(), "user1", "mod1")
 
 		assert.Error(t, err)
-		assert.Equal(t, ErrNotModuleOwner, err)
+		assert.Equal(t, service.ErrNotModuleOwner, err)
 		assert.Nil(t, resp)
 	})
 
@@ -346,7 +346,7 @@ func TestModuleService_Delete(t *testing.T) {
 		err := srv.Delete(context.Background(), "user1", "mod1")
 
 		assert.Error(t, err)
-		assert.Equal(t, ErrModuleNotFound, err)
+		assert.Equal(t, service.ErrModuleNotFound, err)
 	})
 
 	t.Run("Modul milik user lain", func(t *testing.T) {
@@ -357,7 +357,7 @@ func TestModuleService_Delete(t *testing.T) {
 		err := srv.Delete(context.Background(), "user1", "mod1")
 
 		assert.Error(t, err)
-		assert.Equal(t, ErrNotModuleOwner, err)
+		assert.Equal(t, service.ErrNotModuleOwner, err)
 	})
 
 	t.Run("Sukses delete", func(t *testing.T) {

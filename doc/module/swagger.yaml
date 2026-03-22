@@ -1,0 +1,197 @@
+openapi: 3.0.0
+info:
+  title: Backend Pretest AI API - Module Domain
+  description: API Documentation for Module management in Backend Pretest AI project
+  version: 1.0.0
+servers:
+  - url: http://localhost:8080/api/v1
+    description: Local development server
+tags:
+  - name: modules
+    description: Module management (Upload, Get, Delete)
+paths:
+  /modules:
+    post:
+      tags:
+        - modules
+      summary: Upload a new module PDF
+      description: Upload a PDF file to be parsed and summarized asynchronously
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                title:
+                  type: string
+                  description: Module title
+                file:
+                  type: string
+                  format: binary
+                  description: PDF file
+              required:
+                - title
+                - file
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModuleResponseAPI'
+        '400':
+          description: Bad Request
+        '500':
+          description: Internal Server Error
+    get:
+      tags:
+        - modules
+      summary: Get all modules
+      description: Get all modules belonging to the authenticated user
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModuleListResponseAPI'
+        '500':
+          description: Internal Server Error
+  /modules/{id}:
+    get:
+      tags:
+        - modules
+      summary: Get module details
+      description: Get specific module details including its AI summary
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Module ID
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ModuleDetailResponseAPI'
+        '401':
+          description: Unauthorized
+        '404':
+          description: Not Found
+        '500':
+          description: Internal Server Error
+    delete:
+      tags:
+        - modules
+      summary: Delete a module
+      description: Delete a specific module and its history
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Module ID
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/APIResponse'
+        '401':
+          description: Unauthorized
+        '404':
+          description: Not Found
+        '500':
+          description: Internal Server Error
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    ModuleResponseAPI:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        data:
+          $ref: '#/components/schemas/ModuleResponse'
+    ModuleListResponseAPI:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ModuleResponse'
+    ModuleDetailResponseAPI:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        data:
+          $ref: '#/components/schemas/ModuleDetailResponse'
+    APIResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        data:
+          type: object
+        error:
+          type: string
+    ModuleResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        file_url:
+          type: string
+        is_summarized:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+    ModuleDetailResponse:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        file_url:
+          type: string
+        summary:
+          type: string
+        is_summarized:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time

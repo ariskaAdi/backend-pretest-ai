@@ -24,6 +24,19 @@ func NewModuleHandler(moduleService service.ModuleServiceContract) *ModuleHandle
 }
 
 // POST /api/v1/modules
+// Upload godoc
+// @Summary      Upload a new module PDF
+// @Description  Upload a PDF file to be parsed and summarized asynchronously
+// @Tags         modules
+// @Accept       multipart/form-data
+// @Produce      json
+// @Security     BearerAuth
+// @Param        title  formData  string  true  "Module title"
+// @Param        file   formData  file    true  "PDF file"
+// @Success      201    {object}  response.APIResponse{data=dto.ModuleResponse}
+// @Failure      400    {object}  response.APIResponse
+// @Failure      500    {object}  response.APIResponse
+// @Router       /modules [post]
 func (h *ModuleHandler) Upload(c *fiber.Ctx) error {
 	userID := c.Locals("userID").(string)
 
@@ -56,6 +69,15 @@ func (h *ModuleHandler) Upload(c *fiber.Ctx) error {
 }
 
 // GET /api/v1/modules
+// GetAll godoc
+// @Summary      Get all modules
+// @Description  Get all modules belonging to the authenticated user
+// @Tags         modules
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  response.APIResponse{data=[]dto.ModuleResponse}
+// @Failure      500  {object}  response.APIResponse
+// @Router       /modules [get]
 func (h *ModuleHandler) GetAll(c *fiber.Ctx) error {
 	userID := c.Locals("userID").(string)
 
@@ -68,6 +90,18 @@ func (h *ModuleHandler) GetAll(c *fiber.Ctx) error {
 }
 
 // GET /api/v1/modules/:id
+// GetByID godoc
+// @Summary      Get module details
+// @Description  Get specific module details including its AI summary
+// @Tags         modules
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path      string  true  "Module ID"
+// @Success      200  {object}  response.APIResponse{data=dto.ModuleDetailResponse}
+// @Failure      401  {object}  response.APIResponse
+// @Failure      404  {object}  response.APIResponse
+// @Failure      500  {object}  response.APIResponse
+// @Router       /modules/{id} [get]
 func (h *ModuleHandler) GetByID(c *fiber.Ctx) error {
 	userID := c.Locals("userID").(string)
 	moduleID := c.Params("id")
@@ -87,6 +121,18 @@ func (h *ModuleHandler) GetByID(c *fiber.Ctx) error {
 }
 
 // DELETE /api/v1/modules/:id
+// Delete godoc
+// @Summary      Delete a module
+// @Description  Delete a specific module and its history
+// @Tags         modules
+// @Produce      json
+// @Security     BearerAuth
+// @Param        id   path      string  true  "Module ID"
+// @Success      200  {object}  response.APIResponse
+// @Failure      401  {object}  response.APIResponse
+// @Failure      404  {object}  response.APIResponse
+// @Failure      500  {object}  response.APIResponse
+// @Router       /modules/{id} [delete]
 func (h *ModuleHandler) Delete(c *fiber.Ctx) error {
 	userID := c.Locals("userID").(string)
 	moduleID := c.Params("id")
