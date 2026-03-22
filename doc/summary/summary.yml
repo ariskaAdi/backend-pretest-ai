@@ -1,0 +1,102 @@
+openapi: 3.0.0
+info:
+  title: Pretest AI - Summary API
+  version: 1.0.0
+  description: API untuk mengambil dan mengedit summary modul yang di-generate oleh AI.
+
+paths:
+  /api/v1/summary/{moduleId}:
+    get:
+      summary: Ambil summary modul
+      description: Mengambil ringkasan (summary) hasil olahan AI untuk modul tertentu. User harus pemilik modul.
+      tags:
+        - summary
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: moduleId
+          in: path
+          required: true
+          description: ID modul yang ingin diambil summary-nya
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Berhasil mengambil summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SummaryResponse'
+        '400':
+          description: Summary belum siap atau modul masih diproses
+        '401':
+          description: Tidak memiliki akses ke modul ini
+        '404':
+          description: Modul tidak ditemukan
+
+    put:
+      summary: Edit summary manual
+      description: Mengupdate teks summary secara manual oleh user. Tidak memicu generate ulang AI.
+      tags:
+        - summary
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: moduleId
+          in: path
+          required: true
+          description: ID modul yang ingin diedit summary-nya
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateSummaryRequest'
+      responses:
+        '200':
+          description: Summary berhasil diperbarui
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SummaryResponse'
+        '400':
+          description: Format request tidak valid (misal summary < 10 karakter)
+        '401':
+          description: Tidak memiliki akses ke modul ini
+        '404':
+          description: Modul tidak ditemukan
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    SummaryResponse:
+      type: object
+      properties:
+        module_id:
+          type: string
+        module_title:
+          type: string
+        summary:
+          type: string
+        is_summarized:
+          type: boolean
+        updated_at:
+          type: string
+          format: date-time
+
+    UpdateSummaryRequest:
+      type: object
+      required:
+        - summary
+      properties:
+        summary:
+          type: string
+          minLength: 10
+          description: Teks summary baru (minimal 10 karakter)
