@@ -12,11 +12,11 @@ import (
 )
 
 type UserHandler struct {
-	userService *service.UserService
+	userService service.UserService
 	validate    *validator.Validate
 }
 
-func NewUserHandler(userService *service.UserService) *UserHandler {
+func NewUserHandler(userService service.UserService) *UserHandler {
 	return &UserHandler{
 		userService: userService,
 		validate:    validator.New(),
@@ -24,6 +24,17 @@ func NewUserHandler(userService *service.UserService) *UserHandler {
 }
 
 // POST /api/v1/auth/register
+// Register godoc
+// @Summary      Register a new user
+// @Description  Create a new user account and send OTP to email
+// @Tags         auth
+// @Accept       json
+// @Produce      json
+// @Param        request  body      dto.RegisterRequest  true  "Registration info"
+// @Success      201      {object}  response.APIResponse
+// @Failure      400      {object}  response.APIResponse
+// @Failure      500      {object}  response.APIResponse
+// @Router       /auth/register [post]
 func (h *UserHandler) Register(c *fiber.Ctx) error {
 	var req dto.RegisterRequest
 	if err := c.BodyParser(&req); err != nil {
@@ -44,6 +55,18 @@ func (h *UserHandler) Register(c *fiber.Ctx) error {
 }
 
 // POST /api/v1/auth/verify-otp
+// VerifyOTP godoc
+// @Summary      Verify OTP for registration
+// @Description  Verify the OTP sent to user email during registration
+// @Tags         auth
+// @Accept       json
+// @Produce      json
+// @Param        request  body      dto.VerifyOTPRequest  true  "OTP verification info"
+// @Success      200      {object}  response.APIResponse
+// @Failure      400      {object}  response.APIResponse
+// @Failure      404      {object}  response.APIResponse
+// @Failure      500      {object}  response.APIResponse
+// @Router       /auth/verify-otp [post]
 func (h *UserHandler) VerifyOTP(c *fiber.Ctx) error {
 	var req dto.VerifyOTPRequest
 	if err := c.BodyParser(&req); err != nil {
@@ -67,6 +90,18 @@ func (h *UserHandler) VerifyOTP(c *fiber.Ctx) error {
 }
 
 // POST /api/v1/auth/login
+// Login godoc
+// @Summary      Login user
+// @Description  Authenticate user and return JWT token
+// @Tags         auth
+// @Accept       json
+// @Produce      json
+// @Param        request  body      dto.LoginRequest  true  "Login credentials"
+// @Success      200      {object}  response.APIResponse{data=dto.LoginResponse}
+// @Failure      400      {object}  response.APIResponse
+// @Failure      401      {object}  response.APIResponse
+// @Failure      500      {object}  response.APIResponse
+// @Router       /auth/login [post]
 func (h *UserHandler) Login(c *fiber.Ctx) error {
 	var req dto.LoginRequest
 	if err := c.BodyParser(&req); err != nil {
@@ -98,6 +133,19 @@ func (h *UserHandler) Logout(c *fiber.Ctx) error {
 }
 
 // POST /api/v1/user/email/request-update
+// RequestUpdateEmail godoc
+// @Summary      Request email update
+// @Description  Send OTP to new email for verification
+// @Tags         user
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        request  body      dto.UpdateEmailRequest  true  "New email info"
+// @Success      200      {object}  response.APIResponse
+// @Failure      400      {object}  response.APIResponse
+// @Failure      404      {object}  response.APIResponse
+// @Failure      500      {object}  response.APIResponse
+// @Router       /user/email/request-update [post]
 func (h *UserHandler) RequestUpdateEmail(c *fiber.Ctx) error {
 	userID := c.Locals("userID").(string)
 
@@ -123,6 +171,19 @@ func (h *UserHandler) RequestUpdateEmail(c *fiber.Ctx) error {
 }
 
 // POST /api/v1/user/email/verify-update
+// VerifyUpdateEmail godoc
+// @Summary      Verify email update
+// @Description  Verify OTP and update user email
+// @Tags         user
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Param        request  body      dto.VerifyUpdateEmailRequest  true  "OTP verification for new email"
+// @Success      200      {object}  response.APIResponse
+// @Failure      400      {object}  response.APIResponse
+// @Failure      404      {object}  response.APIResponse
+// @Failure      500      {object}  response.APIResponse
+// @Router       /user/email/verify-update [post]
 func (h *UserHandler) VerifyUpdateEmail(c *fiber.Ctx) error {
 	userID := c.Locals("userID").(string)
 
