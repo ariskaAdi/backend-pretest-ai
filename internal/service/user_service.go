@@ -27,16 +27,24 @@ var (
 	ErrNewEmailAlreadyInUse = errors.New("email baru sudah digunakan akun lain")
 )
 
-type UserService struct {
-	userRepo *repository.UserRepository
+type UserService interface {
+	Register(ctx context.Context, req dto.RegisterRequest) error
+	VerifyOTP(ctx context.Context, req dto.VerifyOTPRequest) error
+	Login(ctx context.Context, req dto.LoginRequest) (*dto.LoginResponse, error)
+	RequestUpdateEmail(ctx context.Context, userID string, req dto.UpdateEmailRequest) error
+	VerifyUpdateEmail(ctx context.Context, userID string, req dto.VerifyUpdateEmailRequest) error
 }
 
-func NewUserService(userRepo *repository.UserRepository) *UserService {
-	return &UserService{userRepo: userRepo}
+type userService struct {
+	userRepo repository.UserRepository
+}
+
+func NewUserService(userRepo repository.UserRepository) UserService {
+	return &userService{userRepo: userRepo}
 }
 
 // Register — simpan user baru (belum verified), kirim OTP via goroutine
-func (s *UserService) Register(ctx context.Context, req dto.RegisterRequest) error {
+func (s *userService) Register(ctx context.Context, req dto.RegisterRequest) error {
 	// Validasi: email sudah ada?
 	existing, err := s.userRepo.FindByEmail(ctx, req.Email)
 	if err != nil {
@@ -82,7 +90,7 @@ func (s *UserService) Register(ctx context.Context, req dto.RegisterRequest) err
 }
 
 // VerifyOTP — verifikasi OTP saat register
-func (s *UserService) VerifyOTP(ctx context.Context, req dto.VerifyOTPRequest) error {
+func (s *userService) VerifyOTP(ctx context.Context, req dto.VerifyOTPRequest) error {
 	user, err := s.userRepo.FindByEmail(ctx, req.Email)
 	if err != nil {
 		return err
@@ -99,7 +107,7 @@ func (s *UserService) VerifyOTP(ctx context.Context, req dto.VerifyOTPRequest) e
 }
 
 // Login — validasi credential, return JWT
-func (s *UserService) Login(ctx context.Context, req dto.LoginRequest) (*dto.LoginResponse, error) {
+func (s *userService) Login(ctx context.Context, req dto.LoginRequest) (*dto.LoginResponse, error) {
 	user, err := s.userRepo.FindByEmail(ctx, req.Email)
 	if err != nil {
 		return nil, err
@@ -137,7 +145,7 @@ func (s *UserService) Login(ctx context.Context, req dto.LoginRequest) (*dto.Log
 }
 
 // RequestUpdateEmail — kirim OTP ke email baru untuk verifikasi
-func (s *UserService) RequestUpdateEmail(ctx context.Context, userID string, req dto.UpdateEmailRequest) error {
+func (s *userService) RequestUpdateEmail(ctx context.Context, userID string, req dto.UpdateEmailRequest) error {
 	user, err := s.userRepo.FindByID(ctx, userID)
 	if err != nil {
 		return err
@@ -182,7 +190,7 @@ func (s *UserService) RequestUpdateEmail(ctx context.Context, userID string, req
 }
 
 // VerifyUpdateEmail — konfirmasi OTP lalu update email
-func (s *UserService) VerifyUpdateEmail(ctx context.Context, userID string, req dto.VerifyUpdateEmailRequest) error {
+func (s *userService) VerifyUpdateEmail(ctx context.Context, userID string, req dto.VerifyUpdateEmailRequest) error {
 	user, err := s.userRepo.FindByID(ctx, userID)
 	if err != nil {
 		return err
