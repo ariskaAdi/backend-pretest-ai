@@ -31,6 +31,14 @@ type QuizServiceContract interface {
 	Retry(ctx context.Context, userID string, quizID string) (*dto.QuizResponse, error)
 }
 
+type QuizAI interface {
+	GenerateQuiz(summary string, numQuestions int) (*pkgai.GenerateQuizOutput, error)
+}
+
+var (
+	QuizAIClient QuizAI = pkgai.Client
+)
+
 type QuizService struct {
 	quizRepo   repository.QuizRepositoryContract
 	moduleRepo repository.ModuleRepositoryContract
@@ -63,7 +71,7 @@ func (s *QuizService) Generate(ctx context.Context, userID string, req dto.Gener
 	}
 
 	// Call Genkit generate quiz
-	result, err := pkgai.Client.GenerateQuiz(module.Summary, req.NumQuestions)
+	result, err := QuizAIClient.GenerateQuiz(module.Summary, req.NumQuestions)
 	if err != nil {
 		return nil, fmt.Errorf("gagal generate quiz: %w", err)
 	}

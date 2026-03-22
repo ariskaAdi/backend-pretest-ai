@@ -1,0 +1,289 @@
+openapi: 3.0.3
+info:
+  title: Quiz API
+  description: API for generating, submitting, and viewing quiz history.
+  version: 1.0.0
+
+paths:
+  /api/v1/quiz:
+    post:
+      summary: Generate a new quiz from a module summary
+      tags:
+        - Quiz
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - module_id
+                - num_questions
+              properties:
+                module_id:
+                  type: string
+                  format: uuid
+                  example: "550e8400-e29b-41d4-a716-446655440000"
+                num_questions:
+                  type: integer
+                  enum: [5, 10, 20]
+                  example: 10
+      responses:
+        '201':
+          description: Quiz created successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuizResponse'
+        '400':
+          description: Invalid request or module not summarized
+        '404':
+          description: Module not found
+
+  /api/v1/quiz/{id}/submit:
+    post:
+      summary: Submit answers for a quiz
+      tags:
+        - Quiz
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - answers
+              properties:
+                answers:
+                  type: array
+                  items:
+                    type: object
+                    required:
+                      - question_id
+                      - answer
+                    properties:
+                      question_id:
+                        type: string
+                        format: uuid
+                      answer:
+                        type: string
+                        enum: [A, B, C, D]
+      responses:
+        '200':
+          description: Quiz submitted and scored
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuizResultResponse'
+        '400':
+          description: Invalid answers or quiz already completed
+
+  /api/v1/quiz/{id}/retry:
+    post:
+      summary: Retry a quiz (creates a new quiz with same module and question count)
+      tags:
+        - Quiz
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '201':
+          description: New quiz created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuizResponse'
+        '404':
+          description: Quiz not found
+
+  /api/v1/quiz/history:
+    get:
+      summary: Get user's quiz history
+      tags:
+        - Quiz
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: List of quiz history
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/QuizHistoryResponse'
+
+  /api/v1/quiz/history/module/{moduleId}:
+    get:
+      summary: Get quiz history for a specific module
+      tags:
+        - Quiz
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: moduleId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: List of quiz history for the module
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/QuizHistoryResponse'
+
+  /api/v1/quiz/{id}/result:
+    get:
+      summary: Get detailed results of a completed quiz
+      tags:
+        - Quiz
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Detailed quiz result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuizResultResponse'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    QuizResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        module_id:
+          type: string
+          format: uuid
+        module_title:
+          type: string
+        num_questions:
+          type: integer
+        status:
+          type: string
+          example: "pending"
+        questions:
+          type: array
+          items:
+            $ref: '#/components/schemas/QuestionResponse'
+        created_at:
+          type: string
+          format: date-time
+
+    QuestionResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        text:
+          type: string
+        options:
+          type: array
+          items:
+            type: string
+
+    QuizResultResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        module_id:
+          type: string
+          format: uuid
+        module_title:
+          type: string
+        num_questions:
+          type: integer
+        score:
+          type: integer
+        status:
+          type: string
+          example: "completed"
+        questions:
+          type: array
+          items:
+            $ref: '#/components/schemas/QuestionResultResponse'
+        created_at:
+          type: string
+          format: date-time
+
+    QuestionResultResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        text:
+          type: string
+        options:
+          type: array
+          items:
+            type: string
+        correct_answer:
+          type: string
+        user_answer:
+          type: string
+        is_correct:
+          type: boolean
+
+    QuizHistoryResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        module_id:
+          type: string
+          format: uuid
+        module_title:
+          type: string
+        num_questions:
+          type: integer
+        score:
+          type: integer
+          nullable: true
+        status:
+          type: string
+        created_at:
+          type: string
+          format: date-time
