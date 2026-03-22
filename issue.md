@@ -1,309 +1,334 @@
-# 📋 ISSUE: Unit Test — Quiz Case
+# 📋 ISSUE: Dokumentasi & Pengembangan — Genkit AI Service
 
 ## Status
 `open`
 
 ## Priority
-`high`
+`medium`
 
 ## Assignee
 _unassigned_
 
 ---
 
-## Background & Alur Quiz Case
+## Overview
 
-Quiz case bergantung pada dua hal: **summary modul yang sudah ada** (hasil proses AI dari case module) dan **Genkit service** untuk generate soal. Berikut alur lengkapnya sebelum mulai test.
+Genkit adalah **service AI terpisah** yang berjalan di port `3400`. Backend utama (Fiber, port `8080`) berkomunikasi dengan Genkit melalui HTTP POST. Genkit bertugas menerima input teks, memprosesnya ke Gemini API, lalu mengembalikan hasil dalam format JSON.
+
+```
+┌─────────────────┐         HTTP POST          ┌──────────────────┐
+│  Backend Fiber  │ ─────────────────────────► │  Genkit Service  │
+│   :8080         │ ◄───────────────────────── │   :3400          │
+└─────────────────┘       JSON response        └────────┬─────────┘
+                                                        │
+                                                        │ HTTPS
+                                                        ▼
+                                               ┌──────────────────┐
+                                               │   Gemini API     │
+                                               │  (Google AI)     │
+                                               └──────────────────┘
+```
 
 ---
 
-### Alur 1 — Generate Quiz `POST /api/v1/quiz`
+## Struktur Folder Genkit
 
 ```
-Client kirim:
+genkit/
+├── flows/
+│   ├── summarize.go        ← Flow: summarize PDF text → ringkasan modul
+│   └── generate_quiz.go    ← Flow: generate soal dari summary
+├── prompts/
+│   ├── summarize.prompt    ← (opsional) template prompt summarize
+│   └── quiz.prompt         ← (opsional) template prompt quiz
+├── go.mod                  ← module terpisah dari backend utama
+└── main.go                 ← entry point, register flows, jalankan server
+```
+
+> **Catatan:** `genkit/` adalah Go module tersendiri (`module ut-studypal/genkit`), terpisah dari `module ut-studypal` di root. Harus `go mod tidy` terpisah.
+
+---
+
+## Cara Menjalankan
+
+### Prasyarat
+1. Punya **GEMINI_API_KEY** — dapatkan gratis di [aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey)
+2. Sudah ada file `.env` di root project dengan `GEMINI_API_KEY=...`
+
+### Jalankan Genkit
+```bash
+# Dari root project
+make run-genkit
+
+# Atau manual
+cd genkit/
+go mod tidy
+go run main.go
+```
+
+### Jalankan Developer UI (opsional, untuk testing flow)
+```bash
+# Install Genkit CLI dulu
+npm install -g genkit-cli
+
+# Dari folder genkit/
+genkit start -- go run main.go
+# Developer UI tersedia di http://localhost:4000
+```
+
+---
+
+## Alur Flow: `summarizeModule`
+
+### Endpoint
+```
+POST http://localhost:3400/summarizeModule
+```
+
+### Request
+```json
 {
-    "module_id": "uuid",
-    "num_questions": 10   ← hanya boleh 5, 10, atau 20
+  "data": {
+    "pdf_text": "Isi teks dari PDF yang sudah diekstrak..."
+  }
 }
-
-QuizService.Generate()
-    ├── 1. FindByID(module_id)
-    │       ├── nil          → ErrModuleNotFound
-    │       └── UserID != userID → ErrNotModuleOwner
-    │
-    ├── 2. Cek module.IsSummarized == true && summary != ""
-    │       └── false → ErrModuleNotSummarized (summary AI belum selesai)
-    │
-    ├── 3. pkgai.Client.GenerateQuiz(module.Summary, numQuestions)
-    │       └── HTTP POST ke Genkit :3400/generateQuiz
-    │               └── Gemini generate soal dari summary
-    │               └── return []Question{text, options[4], answer}
-    │
-    ├── 4. Marshal options ke JSON string (disimpan di DB sebagai JSONB)
-    │
-    ├── 5. quizRepo.Create() → simpan quiz + questions ke DB
-    │       └── status: "pending", score: null
-    │
-    └── return QuizResponse
-            └── berisi soal TANPA correct_answer (tidak bocor ke client)
 ```
 
----
-
-### Alur 2 — Submit Jawaban `POST /api/v1/quiz/:id/submit`
-
+### Proses Internal
 ```
-Client kirim:
+Terima pdf_text
+    ├── Validasi: tidak boleh kosong
+    ├── Potong teks kalau > 12.000 karakter (batas aman token Gemini)
+    └── Kirim ke Gemini dengan prompt:
+            "Buat ringkasan modul kuliah dalam Bahasa Indonesia,
+             3-5 paragraf, fokus pada konsep utama..."
+            └── Gemini proses → return teks ringkasan
+```
+
+### Response
+```json
 {
-    "answers": [
-        {"question_id": "uuid", "answer": "A"},
-        {"question_id": "uuid", "answer": "C"},
-        ...
-    ]
+  "result": {
+    "summary": "Modul ini membahas konsep dasar..."
+  }
 }
-
-QuizService.Submit()
-    ├── 1. FindByID(quizID) → cek exist + ownership
-    ├── 2. Cek status != "completed" → ErrQuizAlreadyDone
-    ├── 3. Cek len(answers) == len(questions) → ErrAnswerCountMismatch
-    ├── 4. Build answerMap: questionID → jawaban user
-    ├── 5. Loop tiap question:
-    │       ├── ambil jawaban dari answerMap
-    │       │       └── tidak ketemu → ErrInvalidQuestionID
-    │       ├── set question.UserAnswer = answer
-    │       └── kalau answer == correct_answer → correct++
-    │
-    ├── 6. score = (correct * 100) / total_soal
-    │
-    ├── 7. quizRepo.SaveAnswersAndScore() — dalam 1 DB transaction:
-    │       ├── UPDATE questions SET user_answer = ? WHERE id = ?  (per soal)
-    │       └── UPDATE quizzes SET score = ?, status = 'completed'
-    │
-    └── return QuizResultResponse
-            └── berisi soal + correct_answer + user_answer + is_correct per soal
 ```
 
----
-
-### Alur 3 — Retry Quiz `POST /api/v1/quiz/:id/retry`
-
-```
-QuizService.Retry()
-    ├── 1. FindByID(quizID) → ambil module_id dan num_questions dari quiz lama
-    ├── 2. Validasi ownership
-    └── 3. Panggil Generate() dengan module_id + num_questions yang sama
-            └── AI generate soal BARU dari summary yang sama
-            └── Simpan sebagai quiz baru (quiz lama tetap ada di history)
-```
-
-> Retry tidak menghapus quiz lama. Quiz baru dibuat terpisah sehingga history tetap lengkap.
-
----
-
-### Alur 4 — History `GET /api/v1/quiz/history`
-
-```
-QuizService.GetHistory()
-    └── FindByUserID() → semua quiz user, ORDER BY created_at DESC
-            └── return []QuizHistoryResponse
-                    ├── score: null  (kalau status "pending")
-                    └── score: 80   (kalau status "completed")
-```
-
----
-
-### Alur 5 — History by Module `GET /api/v1/quiz/history/module/:moduleId`
-
-```
-QuizService.GetHistoryByModule()
-    └── FindByUserIDAndModuleID() → filter quiz berdasarkan modul tertentu
-            └── berguna untuk lihat progress retry di satu modul
-```
-
----
-
-### Alur 6 — Lihat Hasil `GET /api/v1/quiz/:id/result`
-
-```
-QuizService.GetResult()
-    ├── FindByID() → cek exist + ownership
-    └── return QuizResultResponse (sama seperti response Submit)
-            └── bisa dipanggil berulang kali setelah quiz selesai
-```
-
----
-
-## Struktur DB
-
-```
-quizzes
-    id, user_id, module_id, num_questions, score (null/int), status (pending/completed)
-
-questions
-    id, quiz_id, text, options (JSONB), correct_answer, user_answer (null saat pending)
-```
-
----
-
-## Task 1 — Interface sudah ada, pastikan konsisten
-
-Interface `QuizServiceContract` dan `QuizRepositoryContract` **sudah didefinisikan** masing-masing di:
-- `internal/service/quiz_service.go` → `QuizServiceContract`
-- `internal/repository/quiz_repo.go` → `QuizRepositoryContract`
-
-Pastikan `QuizHandler` menggunakan `QuizServiceContract` (bukan struct konkret `*QuizService`). Sudah benar di implementasi saat ini.
-
----
-
-## Task 2 — Unit Test: `test/quiz/service/quiz_service_test.go`
-
-### Setup mock:
+### Dipanggil dari
+`internal/service/module_service.go` → fungsi `Upload()` → **goroutine async**
 
 ```go
-type MockQuizRepository struct {
-    mock.Mock
+go func() {
+    result, err := pkgai.Client.Summarize(rawText)
+    // simpan ke DB setelah selesai
+}()
+```
+
+> Dipanggil async karena proses AI bisa memakan 5–30 detik. Upload PDF tidak perlu nunggu summary selesai.
+
+---
+
+## Alur Flow: `generateQuiz`
+
+### Endpoint
+```
+POST http://localhost:3400/generateQuiz
+```
+
+### Request
+```json
+{
+  "data": {
+    "summary": "Ringkasan modul yang sudah ada...",
+    "num_questions": 10
+  }
 }
-// implement semua method QuizRepositoryContract
+```
 
-type MockModuleRepository struct {
-    mock.Mock
+### Proses Internal
+```
+Terima summary + num_questions
+    ├── Validasi: summary tidak kosong, num_questions > 0
+    └── Kirim ke Gemini dengan prompt:
+            "Buat {num_questions} soal pilihan ganda dari materi berikut.
+             Format JSON: {questions: [{question, options[4], answer}]}
+             Kembalikan HANYA JSON tanpa markdown..."
+            └── Gemini generate soal
+            └── Parse JSON response
+            └── Validasi: tiap soal punya 4 pilihan + jawaban
+            └── Normalisasi jawaban ke huruf kapital (A/B/C/D)
+```
+
+### Response
+```json
+{
+  "result": {
+    "questions": [
+      {
+        "question": "Apa yang dimaksud dengan Pancasila?",
+        "options": [
+          "A. Dasar negara Indonesia",
+          "B. Lagu kebangsaan",
+          "C. Bendera negara",
+          "D. Semboyan negara"
+        ],
+        "answer": "A"
+      }
+    ]
+  }
 }
-// implement semua method ModuleRepositoryContract
 ```
 
-### Test case `Generate()`:
-
-| # | Skenario | Expected |
-|---|---|---|
-| 1 | Modul tidak ditemukan | `ErrModuleNotFound` |
-| 2 | Modul milik user lain | `ErrNotModuleOwner` |
-| 3 | `is_summarized = false` | `ErrModuleNotSummarized` |
-| 4 | Summary kosong meski `is_summarized = true` | `ErrModuleNotSummarized` |
-| 5 | Genkit gagal (error) | return error |
-| 6 | Sukses, `num_questions=5` | return `QuizResponse` dengan 5 soal, status `pending` |
-| 7 | Sukses, `num_questions=10` | return `QuizResponse` dengan 10 soal |
-| 8 | Response soal tidak mengandung `correct_answer` | field `correct_answer` tidak ada di `QuestionResponse` |
-
-### Test case `Submit()`:
-
-| # | Skenario | Expected |
-|---|---|---|
-| 1 | Quiz tidak ditemukan | `ErrQuizNotFound` |
-| 2 | Quiz milik user lain | `ErrNotQuizOwner` |
-| 3 | Quiz sudah `completed` | `ErrQuizAlreadyDone` |
-| 4 | Jumlah jawaban kurang | `ErrAnswerCountMismatch` |
-| 5 | Jumlah jawaban lebih | `ErrAnswerCountMismatch` |
-| 6 | `question_id` tidak valid | `ErrInvalidQuestionID` |
-| 7 | Semua jawaban benar | `score = 100` |
-| 8 | Semua jawaban salah | `score = 0` |
-| 9 | Sebagian benar (6/10) | `score = 60` |
-| 10 | `SaveAnswersAndScore` DB error | return error |
-
-### Test case `GetHistory()`:
-
-| # | Skenario | Expected |
-|---|---|---|
-| 1 | User belum punya quiz | return slice kosong |
-| 2 | User punya mix pending + completed | return semua, score null untuk pending |
-| 3 | DB error | return error |
-
-### Test case `GetHistoryByModule()`:
-
-| # | Skenario | Expected |
-|---|---|---|
-| 1 | Tidak ada quiz untuk modul itu | return slice kosong |
-| 2 | Ada beberapa quiz untuk modul itu | return hanya quiz dari modul tersebut |
-
-### Test case `GetResult()`:
-
-| # | Skenario | Expected |
-|---|---|---|
-| 1 | Quiz tidak ditemukan | `ErrQuizNotFound` |
-| 2 | Quiz milik user lain | `ErrNotQuizOwner` |
-| 3 | Sukses | return `QuizResultResponse` dengan detail jawaban |
-
-### Test case `Retry()`:
-
-| # | Skenario | Expected |
-|---|---|---|
-| 1 | Quiz lama tidak ditemukan | `ErrQuizNotFound` |
-| 2 | Quiz lama milik user lain | `ErrNotQuizOwner` |
-| 3 | Modul sudah tidak tersummarisasi | `ErrModuleNotSummarized` |
-| 4 | Sukses | return `QuizResponse` baru, quiz lama tetap ada |
-| 5 | Sukses | `module_id` dan `num_questions` sama dengan quiz lama |
+### Dipanggil dari
+`internal/service/quiz_service.go` → fungsi `Generate()` → **synchronous** (user menunggu soal selesai di-generate)
 
 ---
 
-## Task 3 — Unit Test: `test/quiz/handler/quiz_handler_test.go`
+## Komunikasi Backend → Genkit (`pkg/ai/genkit.go`)
 
-Gunakan `app.Test()` dari Fiber. Mock `QuizServiceContract`.
+Backend tidak langsung pakai Genkit SDK — komunikasi lewat HTTP biasa menggunakan `net/http`. Ini memungkinkan Genkit di-deploy terpisah (misal di Cloud Run) tanpa mengubah kode backend.
 
-| Endpoint | Skenario | Expected HTTP |
-|---|---|---|
-| `POST /quiz` | Body invalid | `400` |
-| `POST /quiz` | `num_questions` bukan 5/10/20 | `400` |
-| `POST /quiz` | Modul tidak ditemukan | `404` |
-| `POST /quiz` | Modul belum disummarisasi | `400` |
-| `POST /quiz` | Sukses | `201` + quiz data |
-| `POST /quiz/:id/submit` | Jawaban tidak lengkap | `400` |
-| `POST /quiz/:id/submit` | Quiz sudah dikerjakan | `400` |
-| `POST /quiz/:id/submit` | Sukses | `200` + result |
-| `POST /quiz/:id/retry` | Quiz tidak ditemukan | `404` |
-| `POST /quiz/:id/retry` | Sukses | `201` + quiz baru |
-| `GET /quiz/history` | Sukses | `200` + list |
-| `GET /quiz/history/module/:id` | Sukses | `200` + list |
-| `GET /quiz/:id/result` | Quiz tidak ditemukan | `404` |
-| `GET /quiz/:id/result` | Sukses | `200` + result |
+```go
+// Helper generic untuk semua flow
+func (g *genkitClient) call(flow string, input any, output any) error {
+    body := json.Marshal({"data": input})
+    resp := http.Post(baseURL + "/" + flow, body)
+    // unwrap {"result": ...}
+    json.Unmarshal(resp.result, &output)
+}
 
----
-
-## Struktur File
-
-```
-test/
-├── quiz/
-│   ├── service/quiz_service_test.go      ← buat baru
-│   └── handler/quiz_handler_test.go      ← buat baru
+// Penggunaan spesifik
+func (g *genkitClient) Summarize(pdfText string) (*SummarizeOutput, error)
+func (g *genkitClient) GenerateQuiz(summary string, numQuestions int) (*GenerateQuizOutput, error)
 ```
 
 ---
 
-## Task 4 — dokumentasi: `doc/quiz/swagger.yml`
+## Model yang Dipakai
 
--- buat dokumentasi di folder doc/quiz/swagger.yml 
+| Model | Keterangan |
+|---|---|
+| `gemini-2.5-flash` | Model yang aktif dipakai saat ini |
+| ~~`gemini-2.0-flash`~~ | Deprecated sejak 3 Maret 2026, jangan dipakai |
 
+---
 
-## Catatan Penting
+## Rate Limit Gemini Free Tier
 
-- **Jangan connect ke DB sungguhan** — semua pakai mock
-- **Jangan call Genkit sungguhan** — mock `pkgai.Client.GenerateQuiz()`
-- **Jangan ubah file existing jika tidak ada konfirmasi dan tidak ada di issue**
-- **Buat branch baru dengan nama feature/quiz-test lalu lakukan PR ke branch main**
-- Test `Submit()` harus memastikan kalkulasi skor benar secara matematis
-- Test `Retry()` harus memastikan quiz lama tidak terhapus (repo `FindByID` quiz lama masih ada)
-- `correct_answer` tidak boleh muncul di `QuestionResponse` (hanya di `QuestionResultResponse`)
+| Limit | Nilai |
+|---|---|
+| Request per menit (RPM) | 10 |
+| Request per hari (RPD) | 250 |
+| Token per menit (TPM) | 250.000 |
+
+Cukup untuk development. Untuk production, aktifkan billing di Google Cloud untuk limit yang jauh lebih tinggi.
+
+---
+
+## Task untuk Tim
+
+### Task 1 — Uji Manual Kedua Flow
+
+Sebelum integrasi penuh, test masing-masing flow secara manual:
 
 ```bash
-go test ./internal/service/... -v -race
-go test ./internal/handler/... -v
-go test ./... -cover
+# Test summarizeModule
+curl -X POST http://localhost:3400/summarizeModule \
+  -H "Content-Type: application/json" \
+  -d '{
+    "data": {
+      "pdf_text": "Pancasila adalah dasar negara Republik Indonesia yang terdiri dari 5 sila..."
+    }
+  }'
+
+# Test generateQuiz
+curl -X POST http://localhost:3400/generateQuiz \
+  -H "Content-Type: application/json" \
+  -d '{
+    "data": {
+      "summary": "Pancasila adalah dasar negara yang memiliki 5 sila...",
+      "num_questions": 5
+    }
+  }'
+```
+
+Pastikan response sesuai format yang diharapkan.
+
+### Task 2 — Dokumentasi Prompt
+
+Isi file `genkit/prompts/summarize.prompt` dan `genkit/prompts/quiz.prompt` dengan versi final prompt yang sudah diuji dan terbukti menghasilkan output terbaik. File ini sebagai referensi tim, bukan dipakai langsung oleh kode.
+
+Format dokumentasi prompt:
+```
+# Prompt: summarizeModule
+# Model: gemini-2.5-flash
+# Last updated: YYYY-MM-DD
+# Author: ...
+
+[System context]
+...
+
+[User prompt template]
+...
+
+[Expected output format]
+...
+
+[Known issues / edge cases]
+...
+```
+
+### Task 3 — Error Handling Edge Cases
+
+Beberapa kondisi yang perlu diverifikasi:
+
+| Kondisi | Perilaku saat ini | Yang diharapkan |
+|---|---|---|
+| PDF text sangat panjang (> 50.000 karakter) | Dipotong di 12.000 | Verifikasi tidak kehilangan konteks penting |
+| Gemini return JSON tidak valid | `parseQuizResponse` return error | Backend log error, quiz tidak tersimpan |
+| Gemini timeout | HTTP client timeout (60 detik) | Error dikembalikan ke service |
+| Gemini return kurang dari `num_questions` soal | Lolos validasi | Perlu dicek — apakah perlu retry? |
+
+### Task 4 — Pertimbangan Deployment Terpisah
+
+Saat ini Genkit dan Backend dijalankan manual di dua terminal. Untuk production, pertimbangkan:
+
+```
+Opsi A: Satu server
+    Backend Fiber :8080
+    Genkit :3400
+    → Jalankan keduanya via Makefile atau supervisor
+
+Opsi B: Deploy terpisah
+    Backend → VPS / Railway
+    Genkit  → Google Cloud Run (native support Genkit)
+    → Update GENKIT_URL di .env ke URL Cloud Run
 ```
 
 ---
 
-## Ekspektasi Coverage
+## Graceful Shutdown
 
-| Package | Target |
-|---|---|
-| `internal/service/quiz_service.go` | ≥ 80% |
-| `internal/handler/quiz_handler.go` | ≥ 60% |
+Kedua service (Backend dan Genkit) sudah mengimplementasi graceful shutdown:
+
+```
+Ctrl+C / SIGTERM diterima
+    ├── Backend Fiber
+    │       ├── Tunggu request yang sedang berjalan selesai
+    │       └── Tutup koneksi PostgreSQL
+    └── Genkit
+            ├── Cancel context (hentikan request Gemini yang sedang jalan)
+            └── Shutdown HTTP server
+```
+
+Ini penting agar proses summarize yang sedang berjalan di goroutine tidak terpotong di tengah jalan.
 
 ---
 
 ## Definition of Done
 
-- [ ] Semua test case di tabel atas diimplementasi
-- [ ] Kalkulasi skor diverifikasi dengan test case benar/salah/campuran
-- [ ] `correct_answer` dipastikan tidak bocor di response generate/retry
-- [ ] `go test ./... -race` lulus tanpa error
-- [ ] Coverage `quiz_service` minimal 80%
+- [ ] Kedua flow berhasil ditest manual via curl
+- [ ] `genkit/prompts/summarize.prompt` dan `quiz.prompt` terisi dokumentasi prompt final
+- [ ] Edge case di Task 3 sudah diverifikasi dan didokumentasikan
+- [ ] Keputusan deployment (Task 4) sudah disepakati tim
+- [ ] Tidak ada API key yang ter-commit ke repository (pastikan `.env` ada di `.gitignore`)
