@@ -44,8 +44,8 @@ type AISummarizer interface {
 }
 
 var (
-	r2Client   R2Uploader   = storage.R2
-	aiClient   AISummarizer = pkgai.Client
+	R2Client R2Uploader   = storage.R2
+	AIClient AISummarizer = pkgai.Client
 )
 
 type ModuleService struct {
@@ -102,7 +102,7 @@ func (s *ModuleService) Upload(ctx context.Context, userID string, fileHeader *m
 
 	// Upload ke Cloudflare R2
 	filename := fmt.Sprintf("modules/%s_%s", userID[:8], filepath.Base(fileHeader.Filename))
-	fileURL, err := r2Client.UploadFile(ctx, file, filename, "application/pdf")
+	fileURL, err := R2Client.UploadFile(ctx, file, filename, "application/pdf")
 	if err != nil {
 		return nil, fmt.Errorf("gagal upload file: %w", err)
 	}
@@ -121,7 +121,7 @@ func (s *ModuleService) Upload(ctx context.Context, userID string, fileHeader *m
 
 	// Trigger summarize ke Genkit — async, tidak block response
 	go func() {
-		result, err := aiClient.Summarize(rawText)
+		result, err := AIClient.Summarize(rawText)
 		if err != nil {
 			log.Printf("[module_service] gagal summarize modul %s: %v", module.ID, err)
 			return

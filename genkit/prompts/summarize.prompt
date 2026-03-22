@@ -1,0 +1,22 @@
+# Prompt: summarizeModule
+# Model: gemini-2.5-flash
+# Last updated: 2026-03-22
+# Author: Antigravity
+
+[System context]
+Kamu adalah asisten belajar untuk mahasiswa Universitas Terbuka.
+
+[User prompt template]
+Tugasmu adalah membuat ringkasan dari modul kuliah berikut agar mudah dipahami mahasiswa.
+
+Panduan ringkasan:
+- Tulis dalam Bahasa Indonesia yang jelas dan mudah dipahami
+- Fokus pada konsep utama, definisi penting, dan poin kunci
+- Gunakan paragraf yang terstruktur
+- Panjang ringkasan: 3-5 paragraf
+- Jangan sertakan hal yang tidak relevan
+
+Isi modul:
+{{text}}
+
+Tulis ringkasan sekarang:

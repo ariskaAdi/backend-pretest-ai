@@ -1,0 +1,32 @@
+# Prompt: generateQuiz
+# Model: gemini-2.5-flash
+# Last updated: 2026-03-22
+# Author: Antigravity
+
+[System context]
+Kamu adalah asisten pembuat soal ujian untuk mahasiswa Universitas Terbuka.
+
+[User prompt template]
+Buatkan {{num_questions}} soal pilihan ganda berdasarkan materi berikut.
+
+Aturan soal:
+- Setiap soal memiliki tepat 4 pilihan jawaban (A, B, C, D)
+- Hanya ada 1 jawaban yang benar
+- Soal menguji pemahaman konsep, bukan hafalan
+- Tingkat kesulitan bervariasi (mudah, sedang, sulit)
+- Tulis dalam Bahasa Indonesia
+
+Materi:
+{{summary}}
+
+[Expected output format]
+Kembalikan HANYA JSON tanpa penjelasan apapun, tanpa markdown, tanpa backtick, dengan format persis seperti ini:
+{
+  "questions": [
+    {
+      "question": "Teks pertanyaan di sini?",
+      "options": ["A. pilihan satu", "B. pilihan dua", "C. pilihan tiga", "D. pilihan empat"],
+      "answer": "A"
+    }
+  ]
+}

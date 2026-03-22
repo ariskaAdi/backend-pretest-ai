@@ -1,4 +1,4 @@
-module ut-studypal/genkit
+module backend-pretest-ai/genkit
 
 go 1.24.1
 

@@ -84,6 +84,11 @@ func (m *MockModuleRepository) UpdateSummary(ctx context.Context, moduleID strin
 	return args.Error(0)
 }
 
+func (m *MockModuleRepository) UpdateSummaryManual(ctx context.Context, moduleID string, summary string) error {
+	args := m.Called(ctx, moduleID, summary)
+	return args.Error(0)
+}
+
 func (m *MockModuleRepository) Delete(ctx context.Context, id string) error {
 	args := m.Called(ctx, id)
 	return args.Error(0)

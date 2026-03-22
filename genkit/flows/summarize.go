@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/firebase/genkit/go/ai"
+	"github.com/firebase/genkit/go/core"
 	"github.com/firebase/genkit/go/genkit"
 )
 
@@ -16,8 +17,8 @@ type SummarizeOutput struct {
 	Summary string `json:"summary"`
 }
 
-func RegisterSummarizeFlow(g *genkit.Genkit) {
-	genkit.DefineFlow(g, "summarizeModule",
+func RegisterSummarizeFlow(g *genkit.Genkit) *core.Flow[*SummarizeInput, *SummarizeOutput, struct{}] {
+	return genkit.DefineFlow(g, "summarizeModule",
 		func(ctx context.Context, input *SummarizeInput) (*SummarizeOutput, error) {
 			if input.PdfText == "" {
 				return nil, fmt.Errorf("pdf_text tidak boleh kosong")

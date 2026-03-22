@@ -15,6 +15,7 @@ type ModuleRepositoryContract interface {
 	FindByID(ctx context.Context, id string) (*domain.Module, error)
 	FindByUserID(ctx context.Context, userID string) ([]domain.Module, error)
 	UpdateSummary(ctx context.Context, moduleID string, summary string) error
+	UpdateSummaryManual(ctx context.Context, moduleID string, summary string) error
 	Delete(ctx context.Context, id string) error
 }
 
@@ -56,6 +57,14 @@ func (r *ModuleRepository) UpdateSummary(ctx context.Context, moduleID string, s
 			"summary":       summary,
 			"is_summarized": true,
 		}).Error
+}
+
+// UpdateSummaryManual — dipanggil user, is_summarized tetap true
+func (r *ModuleRepository) UpdateSummaryManual(ctx context.Context, moduleID string, summary string) error {
+	return r.db.WithContext(ctx).
+		Model(&domain.Module{}).
+		Where("id = ?", moduleID).
+		Update("summary", summary).Error
 }
 
 func (r *ModuleRepository) Delete(ctx context.Context, id string) error {

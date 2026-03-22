@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/firebase/genkit/go/ai"
+	"github.com/firebase/genkit/go/core"
 	"github.com/firebase/genkit/go/genkit"
 )
 
@@ -24,8 +25,8 @@ type GenerateQuizOutput struct {
 	Questions []QuizQuestion `json:"questions"`
 }
 
-func RegisterGenerateQuizFlow(g *genkit.Genkit) {
-	genkit.DefineFlow(g, "generateQuiz",
+func RegisterGenerateQuizFlow(g *genkit.Genkit) *core.Flow[*GenerateQuizInput, *GenerateQuizOutput, struct{}] {
+	return genkit.DefineFlow(g, "generateQuiz",
 		func(ctx context.Context, input *GenerateQuizInput) (*GenerateQuizOutput, error) {
 			if input.Summary == "" {
 				return nil, fmt.Errorf("summary tidak boleh kosong")

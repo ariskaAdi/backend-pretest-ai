@@ -38,6 +38,9 @@ func Setup(app *fiber.App) {
 	moduleSvc := service.NewModuleService(moduleRepo)
 	moduleHandler := handler.NewModuleHandler(moduleSvc)
 
+	summarySvc := service.NewSummaryService(moduleRepo)
+	summaryHandler := handler.NewSummaryHandler(summarySvc)
+
 	quizRepo := repository.NewQuizRepository()
 	quizSvc := service.NewQuizService(quizRepo, moduleRepo)
 	quizHandler := handler.NewQuizHandler(quizSvc)
@@ -67,6 +70,11 @@ func Setup(app *fiber.App) {
 	modules.Get("/", moduleHandler.GetAll)
 	modules.Get("/:id", moduleHandler.GetByID)
 	modules.Delete("/:id", moduleHandler.Delete)
+
+	// --- Summary routes (protected) ---
+	summary := api.Group("/summary", middleware.Auth())
+	summary.Get("/:moduleId", summaryHandler.GetByModuleID)
+	summary.Put("/:moduleId", summaryHandler.UpdateManual)
 
 	// --- Quiz routes (protected) ---
 	quiz := api.Group("/quiz", middleware.Auth())

@@ -47,6 +47,10 @@ func (m *MockModuleRepository) UpdateSummary(ctx context.Context, moduleID strin
 	args := m.Called(ctx, moduleID, summary)
 	return args.Error(0)
 }
+func (m *MockModuleRepository) UpdateSummaryManual(ctx context.Context, moduleID string, summary string) error {
+	args := m.Called(ctx, moduleID, summary)
+	return args.Error(0)
+}
 func (m *MockModuleRepository) Delete(ctx context.Context, id string) error {
 	args := m.Called(ctx, id)
 	return args.Error(0)
@@ -112,10 +116,8 @@ func setupModuleServiceTest(t *testing.T) (service.ModuleServiceContract, *MockM
 	mockR2 := new(MockR2Uploader)
 	mockAI := new(MockAISummarizer)
 
-	// In the real package these are private, but in the test they might be exported or we need a way to mock.
-	// Since we are in package 'service', we can access them if we use package service for the test as well.
-	// But it's better to use service_test for external testing.
-	// For now I'll use package service to match the previous implementation.
+	service.R2Client = mockR2
+	service.AIClient = mockAI
 
 	srv := service.NewModuleService(mockRepo)
 

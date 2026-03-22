@@ -30,17 +30,14 @@ func main() {
 	defer cancel()
 
 	// Init Genkit dengan plugin Google AI (Gemini)
-	g, err := genkit.Init(ctx,
+	g := genkit.Init(ctx,
 		genkit.WithPlugins(&googlegenai.GoogleAI{}),
 		genkit.WithDefaultModel("googleai/gemini-2.5-flash"),
 	)
-	if err != nil {
-		log.Fatalf("[genkit] gagal init: %v", err)
-	}
 
-	// Register semua flows
-	flows.RegisterSummarizeFlow(g)
-	flows.RegisterGenerateQuizFlow(g)
+	// Register semua flows dan simpan referensinya
+	summarizeFlow := flows.RegisterSummarizeFlow(g)
+	generateQuizFlow := flows.RegisterGenerateQuizFlow(g)
 
 	log.Println("[genkit] flows registered: summarizeModule, generateQuiz")
 
@@ -49,13 +46,20 @@ func main() {
 		port = "3400"
 	}
 
+	// Mount setiap flow sebagai HTTP handler
+	mux := http.NewServeMux()
+	mux.HandleFunc("/summarizeModule", genkit.Handler(summarizeFlow))
+	mux.HandleFunc("/generateQuiz", genkit.Handler(generateQuizFlow))
+
+	srv := &http.Server{
+		Addr:    ":" + port,
+		Handler: mux,
+	}
+
 	// Jalankan server di goroutine
-	srv := &http.Server{Addr: ":" + port}
 	go func() {
 		log.Printf("[genkit] server running on http://localhost:%s", port)
-		if err := genkit.StartFlowServer(ctx, g, &genkit.FlowServerOptions{
-			Addr: ":" + port,
-		}); err != nil && err != http.ErrServerClosed {
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("[genkit] server error: %v", err)
 		}
 	}()
