@@ -34,6 +34,10 @@ func Setup(app *fiber.App) {
 	userSvc := service.NewUserService(userRepo)
 	userHandler := handler.NewUserHandler(userSvc)
 
+	moduleRepo := repository.NewModuleRepository()
+	moduleSvc := service.NewModuleService(moduleRepo)
+	moduleHandler := handler.NewModuleHandler(moduleSvc)
+
 	api := app.Group("/api/v1")
 
 	// Health check
@@ -52,4 +56,11 @@ func Setup(app *fiber.App) {
 	user := api.Group("/user", middleware.Auth())
 	user.Post("/email/request-update", userHandler.RequestUpdateEmail)
 	user.Post("/email/verify-update", userHandler.VerifyUpdateEmail)
+
+	// --- Module routes (protected) ---
+	modules := api.Group("/modules", middleware.Auth())
+	modules.Post("/", moduleHandler.Upload)
+	modules.Get("/", moduleHandler.GetAll)
+	modules.Get("/:id", moduleHandler.GetByID)
+	modules.Delete("/:id", moduleHandler.Delete)
 }
