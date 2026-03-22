@@ -1,4 +1,4 @@
-# 📋 ISSUE: Swagger API Documentation & Test Refactoring — Module Case
+# 📋 ISSUE: Unit Test — Quiz Case
 
 ## Status
 `open`
@@ -11,105 +11,299 @@ _unassigned_
 
 ---
 
-## Aturan Pengerjaan (PENTING)
-Tim yang mengerjakan task ini **DIWAJIBKAN** membuat branch baru dari `main` dengan nama:
-`feature/module-doc-test`
+## Background & Alur Quiz Case
 
-Seluruh komit harus dilakukan di dalam branch tersebut sebelum di-Push dan dibuatkan Pull Request (PR).
+Quiz case bergantung pada dua hal: **summary modul yang sudah ada** (hasil proses AI dari case module) dan **Genkit service** untuk generate soal. Berikut alur lengkapnya sebelum mulai test.
 
 ---
 
-## Background
+### Alur 1 — Generate Quiz `POST /api/v1/quiz`
 
-Kita telah berhasil menambahkan *Unit Test* yang komprehensif pada fitur Module. Namun, saat ini file test tersebut (`module_service_test.go` dan `module_handler_test.go`) tanpa sengaja tercampur di dalam folder `test/user`. Selain itu, kita juga membutuhkan dokumentasi API (Swagger) yang jelas bagi tim Frontend/Client. 
+```
+Client kirim:
+{
+    "module_id": "uuid",
+    "num_questions": 10   ← hanya boleh 5, 10, atau 20
+}
 
-Tugas ini dibagi menjadi dua bagian: **Pembuatan Dokumentasi Swagger** dan **Perbaikan Struktur Folder Test**.
-
----
-
-## Task 1 — Refactor Struktur Folder Test (Modularisasi)
-
-Agar struktur testing lebih rapi dan modular, file test untuk domain *Module* harus memiliki domain foldernya sendiri, tidak boleh bercampur dengan domain *User*.
-
-1. Buat struktur folder baru di dalam `/test`:
-   ```
-   test/
-   └── module/
-       ├── handler/
-       └── service/
-   ```
-2. Pindahkah file test terkait module yang ada di dalam `test/user` ke folder baru tersebut:
-   - Pindahkan `module_service_test.go` (beserta mock) ke `test/module/service/module_service_test.go`
-   - Pindahkan `module_handler_test.go` (beserta mock) ke `test/module/handler/module_handler_test.go`
-3. Pastikan `package` logis mengikuti nama foldernya, dan jalankan perintah test untuk memastikan tidak ada yang *broken* sesudah dipindahkan:
-   ```bash
-   go test ./test/module/... -v 
-   ```
-
----
-
-## Task 2 — Tambahan Komentar Godoc (Swagger)
-
-Di dalam file `internal/handler/module_handler.go`, tambahkan deklarasi *annotation* rutin wajib Swagger di atas setiap deklarasi handler.
-
-Seluruh endpoint Module membutuhkan autentikasi (menggunakan token JWT), sehingga wajib menyertakan tag `@Security BearerAuth`.
-
-### Daftar Endpoint yang Perlu Didokumentasikan:
-
-1. **POST /modules** (`Upload`)
-   - **Summary**: Upload a new module PDF
-   - **Description**: Upload a PDF file to be parsed and summarized asynchronously.
-   - **Accept**: multipart/form-data
-   - **Params**:
-     - `title` (formData, required) — Judul dari modul.
-     - `file` (formData, required) — File dokumen berekstensi `.pdf`.
-   - **Responses**: `201 Created` (return `ModuleResponse`), `400 Bad Request`, `500 Server Error`.
-
-2. **GET /modules** (`GetAll`)
-   - **Summary**: Get all modules
-   - **Description**: Get all modules belonging to the authenticated user.
-   - **Responses**: `200 OK` (return array of `ModuleResponse`), `500 Server Error`.
-
-3. **GET /modules/:id** (`GetByID`)
-   - **Summary**: Get module details
-   - **Description**: Get specific module details including its AI summary.
-   - **Params**: `id` (path, required) — UUID dari modul terkait.
-   - **Responses**: `200 OK` (return `ModuleDetailResponse`), `401 Unauthorized`, `404 Not Found`, `500 Server Error`.
-
-4. **DELETE /modules/:id** (`Delete`)
-   - **Summary**: Delete a module
-   - **Description**: Delete a specific module and its history.
-   - **Params**: `id` (path, required) — UUID dari modul terkait.
-   - **Responses**: `200 OK`, `401 Unauthorized`, `404 Not Found`, `500 Server Error`.
+QuizService.Generate()
+    ├── 1. FindByID(module_id)
+    │       ├── nil          → ErrModuleNotFound
+    │       └── UserID != userID → ErrNotModuleOwner
+    │
+    ├── 2. Cek module.IsSummarized == true && summary != ""
+    │       └── false → ErrModuleNotSummarized (summary AI belum selesai)
+    │
+    ├── 3. pkgai.Client.GenerateQuiz(module.Summary, numQuestions)
+    │       └── HTTP POST ke Genkit :3400/generateQuiz
+    │               └── Gemini generate soal dari summary
+    │               └── return []Question{text, options[4], answer}
+    │
+    ├── 4. Marshal options ke JSON string (disimpan di DB sebagai JSONB)
+    │
+    ├── 5. quizRepo.Create() → simpan quiz + questions ke DB
+    │       └── status: "pending", score: null
+    │
+    └── return QuizResponse
+            └── berisi soal TANPA correct_answer (tidak bocor ke client)
+```
 
 ---
 
-## Task 3 — Generate Swagger Docs
+### Alur 2 — Submit Jawaban `POST /api/v1/quiz/:id/submit`
 
-Setelah semua komentar di-setup, tim perlu men-generate dokumentasi ini ke dalam folder spesifik `doc/module/`.
+```
+Client kirim:
+{
+    "answers": [
+        {"question_id": "uuid", "answer": "A"},
+        {"question_id": "uuid", "answer": "C"},
+        ...
+    ]
+}
 
-Jalankan perintah berikut di terminal pada root project:
+QuizService.Submit()
+    ├── 1. FindByID(quizID) → cek exist + ownership
+    ├── 2. Cek status != "completed" → ErrQuizAlreadyDone
+    ├── 3. Cek len(answers) == len(questions) → ErrAnswerCountMismatch
+    ├── 4. Build answerMap: questionID → jawaban user
+    ├── 5. Loop tiap question:
+    │       ├── ambil jawaban dari answerMap
+    │       │       └── tidak ketemu → ErrInvalidQuestionID
+    │       ├── set question.UserAnswer = answer
+    │       └── kalau answer == correct_answer → correct++
+    │
+    ├── 6. score = (correct * 100) / total_soal
+    │
+    ├── 7. quizRepo.SaveAnswersAndScore() — dalam 1 DB transaction:
+    │       ├── UPDATE questions SET user_answer = ? WHERE id = ?  (per soal)
+    │       └── UPDATE quizzes SET score = ?, status = 'completed'
+    │
+    └── return QuizResultResponse
+            └── berisi soal + correct_answer + user_answer + is_correct per soal
+```
+
+---
+
+### Alur 3 — Retry Quiz `POST /api/v1/quiz/:id/retry`
+
+```
+QuizService.Retry()
+    ├── 1. FindByID(quizID) → ambil module_id dan num_questions dari quiz lama
+    ├── 2. Validasi ownership
+    └── 3. Panggil Generate() dengan module_id + num_questions yang sama
+            └── AI generate soal BARU dari summary yang sama
+            └── Simpan sebagai quiz baru (quiz lama tetap ada di history)
+```
+
+> Retry tidak menghapus quiz lama. Quiz baru dibuat terpisah sehingga history tetap lengkap.
+
+---
+
+### Alur 4 — History `GET /api/v1/quiz/history`
+
+```
+QuizService.GetHistory()
+    └── FindByUserID() → semua quiz user, ORDER BY created_at DESC
+            └── return []QuizHistoryResponse
+                    ├── score: null  (kalau status "pending")
+                    └── score: 80   (kalau status "completed")
+```
+
+---
+
+### Alur 5 — History by Module `GET /api/v1/quiz/history/module/:moduleId`
+
+```
+QuizService.GetHistoryByModule()
+    └── FindByUserIDAndModuleID() → filter quiz berdasarkan modul tertentu
+            └── berguna untuk lihat progress retry di satu modul
+```
+
+---
+
+### Alur 6 — Lihat Hasil `GET /api/v1/quiz/:id/result`
+
+```
+QuizService.GetResult()
+    ├── FindByID() → cek exist + ownership
+    └── return QuizResultResponse (sama seperti response Submit)
+            └── bisa dipanggil berulang kali setelah quiz selesai
+```
+
+---
+
+## Struktur DB
+
+```
+quizzes
+    id, user_id, module_id, num_questions, score (null/int), status (pending/completed)
+
+questions
+    id, quiz_id, text, options (JSONB), correct_answer, user_answer (null saat pending)
+```
+
+---
+
+## Task 1 — Interface sudah ada, pastikan konsisten
+
+Interface `QuizServiceContract` dan `QuizRepositoryContract` **sudah didefinisikan** masing-masing di:
+- `internal/service/quiz_service.go` → `QuizServiceContract`
+- `internal/repository/quiz_repo.go` → `QuizRepositoryContract`
+
+Pastikan `QuizHandler` menggunakan `QuizServiceContract` (bukan struct konkret `*QuizService`). Sudah benar di implementasi saat ini.
+
+---
+
+## Task 2 — Unit Test: `test/quiz/service/quiz_service_test.go`
+
+### Setup mock:
+
+```go
+type MockQuizRepository struct {
+    mock.Mock
+}
+// implement semua method QuizRepositoryContract
+
+type MockModuleRepository struct {
+    mock.Mock
+}
+// implement semua method ModuleRepositoryContract
+```
+
+### Test case `Generate()`:
+
+| # | Skenario | Expected |
+|---|---|---|
+| 1 | Modul tidak ditemukan | `ErrModuleNotFound` |
+| 2 | Modul milik user lain | `ErrNotModuleOwner` |
+| 3 | `is_summarized = false` | `ErrModuleNotSummarized` |
+| 4 | Summary kosong meski `is_summarized = true` | `ErrModuleNotSummarized` |
+| 5 | Genkit gagal (error) | return error |
+| 6 | Sukses, `num_questions=5` | return `QuizResponse` dengan 5 soal, status `pending` |
+| 7 | Sukses, `num_questions=10` | return `QuizResponse` dengan 10 soal |
+| 8 | Response soal tidak mengandung `correct_answer` | field `correct_answer` tidak ada di `QuestionResponse` |
+
+### Test case `Submit()`:
+
+| # | Skenario | Expected |
+|---|---|---|
+| 1 | Quiz tidak ditemukan | `ErrQuizNotFound` |
+| 2 | Quiz milik user lain | `ErrNotQuizOwner` |
+| 3 | Quiz sudah `completed` | `ErrQuizAlreadyDone` |
+| 4 | Jumlah jawaban kurang | `ErrAnswerCountMismatch` |
+| 5 | Jumlah jawaban lebih | `ErrAnswerCountMismatch` |
+| 6 | `question_id` tidak valid | `ErrInvalidQuestionID` |
+| 7 | Semua jawaban benar | `score = 100` |
+| 8 | Semua jawaban salah | `score = 0` |
+| 9 | Sebagian benar (6/10) | `score = 60` |
+| 10 | `SaveAnswersAndScore` DB error | return error |
+
+### Test case `GetHistory()`:
+
+| # | Skenario | Expected |
+|---|---|---|
+| 1 | User belum punya quiz | return slice kosong |
+| 2 | User punya mix pending + completed | return semua, score null untuk pending |
+| 3 | DB error | return error |
+
+### Test case `GetHistoryByModule()`:
+
+| # | Skenario | Expected |
+|---|---|---|
+| 1 | Tidak ada quiz untuk modul itu | return slice kosong |
+| 2 | Ada beberapa quiz untuk modul itu | return hanya quiz dari modul tersebut |
+
+### Test case `GetResult()`:
+
+| # | Skenario | Expected |
+|---|---|---|
+| 1 | Quiz tidak ditemukan | `ErrQuizNotFound` |
+| 2 | Quiz milik user lain | `ErrNotQuizOwner` |
+| 3 | Sukses | return `QuizResultResponse` dengan detail jawaban |
+
+### Test case `Retry()`:
+
+| # | Skenario | Expected |
+|---|---|---|
+| 1 | Quiz lama tidak ditemukan | `ErrQuizNotFound` |
+| 2 | Quiz lama milik user lain | `ErrNotQuizOwner` |
+| 3 | Modul sudah tidak tersummarisasi | `ErrModuleNotSummarized` |
+| 4 | Sukses | return `QuizResponse` baru, quiz lama tetap ada |
+| 5 | Sukses | `module_id` dan `num_questions` sama dengan quiz lama |
+
+---
+
+## Task 3 — Unit Test: `test/quiz/handler/quiz_handler_test.go`
+
+Gunakan `app.Test()` dari Fiber. Mock `QuizServiceContract`.
+
+| Endpoint | Skenario | Expected HTTP |
+|---|---|---|
+| `POST /quiz` | Body invalid | `400` |
+| `POST /quiz` | `num_questions` bukan 5/10/20 | `400` |
+| `POST /quiz` | Modul tidak ditemukan | `404` |
+| `POST /quiz` | Modul belum disummarisasi | `400` |
+| `POST /quiz` | Sukses | `201` + quiz data |
+| `POST /quiz/:id/submit` | Jawaban tidak lengkap | `400` |
+| `POST /quiz/:id/submit` | Quiz sudah dikerjakan | `400` |
+| `POST /quiz/:id/submit` | Sukses | `200` + result |
+| `POST /quiz/:id/retry` | Quiz tidak ditemukan | `404` |
+| `POST /quiz/:id/retry` | Sukses | `201` + quiz baru |
+| `GET /quiz/history` | Sukses | `200` + list |
+| `GET /quiz/history/module/:id` | Sukses | `200` + list |
+| `GET /quiz/:id/result` | Quiz tidak ditemukan | `404` |
+| `GET /quiz/:id/result` | Sukses | `200` + result |
+
+---
+
+## Struktur File
+
+```
+test/
+├── quiz/
+│   ├── service/quiz_service_test.go      ← buat baru
+│   └── handler/quiz_handler_test.go      ← buat baru
+```
+
+---
+
+## Task 4 — dokumentasi: `doc/quiz/swagger.yml`
+
+-- buat dokumentasi di folder doc/quiz/swagger.yml 
+
+
+## Catatan Penting
+
+- **Jangan connect ke DB sungguhan** — semua pakai mock
+- **Jangan call Genkit sungguhan** — mock `pkgai.Client.GenerateQuiz()`
+- **Jangan ubah file existing jika tidak ada konfirmasi dan tidak ada di issue**
+- **Buat branch baru dengan nama feature/quiz-test lalu lakukan PR ke branch main**
+- Test `Submit()` harus memastikan kalkulasi skor benar secara matematis
+- Test `Retry()` harus memastikan quiz lama tidak terhapus (repo `FindByID` quiz lama masih ada)
+- `correct_answer` tidak boleh muncul di `QuestionResponse` (hanya di `QuestionResultResponse`)
+
 ```bash
-swag init -g internal/router/router.go -o doc/module/ --parseDependency --parseInternal
+go test ./internal/service/... -v -race
+go test ./internal/handler/... -v
+go test ./... -cover
 ```
 
-Pastikan struktur direktori nantinya akan menjadi seperti ini:
-```
-doc/
-├── user/
-│   ├── swagger.json
-│   └── swagger.yaml
-└── module/
-    ├── swagger.json
-    └── swagger.yaml
-```
+---
+
+## Ekspektasi Coverage
+
+| Package | Target |
+|---|---|
+| `internal/service/quiz_service.go` | ≥ 80% |
+| `internal/handler/quiz_handler.go` | ≥ 60% |
 
 ---
 
 ## Definition of Done
 
-- [ ] Pengerjaan dilakukan pada branch `feature/module-doc-test`.
-- [ ] File test module telah dipindahkan ke folder `test/module/service/` dan `test/module/handler/` dengan namespace package yang benar.
-- [ ] Menjalankan `go test ./test/module/...` berjalan 100% tanpa error.
-- [ ] Seluruh endpoint (`Upload`, `GetAll`, `GetByID`, `Delete`) di `module_handler.go` memiliki komentar Godoc yang sesuai.
-- [ ] File swagger (`swagger.json`, `swagger.yaml`, `docs.go`) berhasil digenerate di dalam folder `doc/module/`.
+- [ ] Semua test case di tabel atas diimplementasi
+- [ ] Kalkulasi skor diverifikasi dengan test case benar/salah/campuran
+- [ ] `correct_answer` dipastikan tidak bocor di response generate/retry
+- [ ] `go test ./... -race` lulus tanpa error
+- [ ] Coverage `quiz_service` minimal 80%
