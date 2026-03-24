@@ -13,7 +13,7 @@ Backend service untuk aplikasi **Pretest AI**, platform belajar mahasiswa/pelaja
 | ORM | GORM |
 | Database | PostgreSQL 16 |
 | File Storage | Cloudflare R2 |
-| AI Service | Genkit (Google AI — Gemini 2.5 Flash) |
+| AI Service | Genkit (Google AI — Gemini 1.5 Flash) |
 | Auth | JWT (golang-jwt/jwt v5) |
 | Email | SMTP (net/smtp) |
 

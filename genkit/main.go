@@ -32,7 +32,7 @@ func main() {
 	// Init Genkit dengan plugin Google AI (Gemini)
 	g := genkit.Init(ctx,
 		genkit.WithPlugins(&googlegenai.GoogleAI{}),
-		genkit.WithDefaultModel("googleai/gemini-2.5-flash"),
+		genkit.WithDefaultModel("googleai/gemini-1.5-flash"),
 	)
 
 	// Register semua flows dan simpan referensinya

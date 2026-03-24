@@ -74,8 +74,8 @@ func Load() {
 			Host:     getEnv("DB_HOST", "localhost"),
 			Port:     getEnv("DB_PORT", "5432"),
 			User:     getEnv("DB_USER", "postgres"),
-			Password: getEnv("DB_PASSWORD", ""),
-			Name:     getEnv("DB_NAME", "ut_studypal"),
+			Password: getEnv("DB_PASSWORD", "postgres"),
+			Name:     getEnv("DB_NAME", "pretestai"),
 			SSLMode:  getEnv("DB_SSLMODE", "disable"),
 		},
 		R2: R2Config{

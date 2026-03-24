@@ -113,10 +113,7 @@ func setupQuizServiceTest(t *testing.T) (service.QuizServiceContract, *MockQuizR
 	mockModuleRepo := new(MockModuleRepository)
 	mockAI := new(MockQuizAI)
 
-	// Switch real client with mock
-	service.QuizAIClient = mockAI
-
-	srv := service.NewQuizService(mockQuizRepo, mockModuleRepo)
+	srv := service.NewQuizService(mockQuizRepo, mockModuleRepo, mockAI)
 	return srv, mockQuizRepo, mockModuleRepo, mockAI
 }
 

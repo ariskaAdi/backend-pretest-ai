@@ -15,7 +15,6 @@ import (
 	"backend-pretest-ai/internal/repository"
 	pkgai "backend-pretest-ai/pkg/ai"
 	pdfpkg "backend-pretest-ai/pkg/pdf"
-	"backend-pretest-ai/pkg/storage"
 )
 
 var (
@@ -43,17 +42,18 @@ type AISummarizer interface {
 	Summarize(pdfText string) (*pkgai.SummarizeOutput, error)
 }
 
-var (
-	R2Client R2Uploader   = storage.R2
-	AIClient AISummarizer = pkgai.Client
-)
-
 type ModuleService struct {
 	moduleRepo repository.ModuleRepositoryContract
+	r2Client   R2Uploader
+	aiClient   AISummarizer
 }
 
-func NewModuleService(moduleRepo repository.ModuleRepositoryContract) ModuleServiceContract {
-	return &ModuleService{moduleRepo: moduleRepo}
+func NewModuleService(moduleRepo repository.ModuleRepositoryContract, r2Client R2Uploader, aiClient AISummarizer) ModuleServiceContract {
+	return &ModuleService{
+		moduleRepo: moduleRepo,
+		r2Client:   r2Client,
+		aiClient:   aiClient,
+	}
 }
 
 // Upload — terima PDF, upload ke R2, extract text, simpan ke DB, trigger summarize async
@@ -75,8 +75,8 @@ func (s *ModuleService) Upload(ctx context.Context, userID string, fileHeader *m
 	}
 	defer file.Close()
 
-	// Simpan sementara ke /tmp untuk ekstraksi teks
-	tmpPath := fmt.Sprintf("/tmp/%d_%s", time.Now().UnixNano(), filepath.Base(fileHeader.Filename))
+	// Simpan sementara ke temp folder untuk ekstraksi teks
+	tmpPath := filepath.Join(os.TempDir(), fmt.Sprintf("%d_%s", time.Now().UnixNano(), filepath.Base(fileHeader.Filename)))
 	tmpFile, err := os.Create(tmpPath)
 	if err != nil {
 		return nil, fmt.Errorf("gagal membuat file sementara: %w", err)
@@ -102,7 +102,7 @@ func (s *ModuleService) Upload(ctx context.Context, userID string, fileHeader *m
 
 	// Upload ke Cloudflare R2
 	filename := fmt.Sprintf("modules/%s_%s", userID[:8], filepath.Base(fileHeader.Filename))
-	fileURL, err := R2Client.UploadFile(ctx, file, filename, "application/pdf")
+	fileURL, err := s.r2Client.UploadFile(ctx, file, filename, "application/pdf")
 	if err != nil {
 		return nil, fmt.Errorf("gagal upload file: %w", err)
 	}
@@ -121,7 +121,7 @@ func (s *ModuleService) Upload(ctx context.Context, userID string, fileHeader *m
 
 	// Trigger summarize ke Genkit — async, tidak block response
 	go func() {
-		result, err := AIClient.Summarize(rawText)
+		result, err := s.aiClient.Summarize(rawText)
 		if err != nil {
 			log.Printf("[module_service] gagal summarize modul %s: %v", module.ID, err)
 			return

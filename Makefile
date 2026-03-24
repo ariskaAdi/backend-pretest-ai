@@ -28,20 +28,19 @@ tidy: ## go mod tidy untuk backend dan genkit
 
 migrate: ## Jalankan semua migration SQL ke DB
 	@echo "Running migrations..."
-	docker exec -i postgres-db psql -U postgres -d pretestai < migrations/001_create_users.sql
-	docker exec -i postgres-db psql -U postgres -d pretestai < migrations/002_create_modules.sql
-	docker exec -i postgres-db psql -U postgres -d pretestai < migrations/003_create_summaries.sql
-	docker exec -i postgres-db psql -U postgres -d pretestai < migrations/004_create_quizzes.sql
+	docker exec -i pretest-ai-postgres psql -U postgres -d pretestai < migrations/001_create_users.sql
+	docker exec -i pretest-ai-postgres psql -U postgres -d pretestai < migrations/002_create_modules.sql
+	docker exec -i pretest-ai-postgres psql -U postgres -d pretestai < migrations/004_create_quizzes.sql
 	@echo "✅ Migration selesai"
 
 migrate-fresh: ## Drop semua tabel lalu migrate ulang (HATI-HATI: hapus semua data)
 	@echo "⚠️  Dropping all tables..."
-	docker exec -i postgres-db psql -U postgres -d pretestai -c \
+	docker exec -i pretest-ai-postgres psql -U postgres -d pretestai -c \
 		"DROP TABLE IF EXISTS questions, quizzes, modules, users CASCADE; DROP TYPE IF EXISTS user_role, quiz_status CASCADE;"
 	@$(MAKE) migrate
 
 db-shell: ## Masuk ke psql shell
-	docker exec -it postgres-db psql -U postgres -d pretestai
+	docker exec -it pretest-ai-postgres psql -U postgres -d pretestai
 
 # ── Test ─────────────────────────────────────
 

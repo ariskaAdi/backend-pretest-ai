@@ -35,19 +35,17 @@ type QuizAI interface {
 	GenerateQuiz(summary string, numQuestions int) (*pkgai.GenerateQuizOutput, error)
 }
 
-var (
-	QuizAIClient QuizAI = pkgai.Client
-)
-
 type QuizService struct {
 	quizRepo   repository.QuizRepositoryContract
 	moduleRepo repository.ModuleRepositoryContract
+	aiClient   QuizAI
 }
 
-func NewQuizService(quizRepo repository.QuizRepositoryContract, moduleRepo repository.ModuleRepositoryContract) *QuizService {
+func NewQuizService(quizRepo repository.QuizRepositoryContract, moduleRepo repository.ModuleRepositoryContract, aiClient QuizAI) *QuizService {
 	return &QuizService{
 		quizRepo:   quizRepo,
 		moduleRepo: moduleRepo,
+		aiClient:   aiClient,
 	}
 }
 
@@ -71,7 +69,7 @@ func (s *QuizService) Generate(ctx context.Context, userID string, req dto.Gener
 	}
 
 	// Call Genkit generate quiz
-	result, err := QuizAIClient.GenerateQuiz(module.Summary, req.NumQuestions)
+	result, err := s.aiClient.GenerateQuiz(module.Summary, req.NumQuestions)
 	if err != nil {
 		return nil, fmt.Errorf("gagal generate quiz: %w", err)
 	}

@@ -7,8 +7,10 @@ import (
 	"syscall"
 
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/cors"
 
 	"backend-pretest-ai/config"
+	"backend-pretest-ai/internal/middleware"
 	"backend-pretest-ai/internal/router"
 	"backend-pretest-ai/pkg/ai"
 	"backend-pretest-ai/pkg/mailer"
@@ -31,6 +33,9 @@ func main() {
 	// 5. Init Mailer
 	mailer.InitMailer()
 
+	// . Init Logger
+	middleware.InitLogger()
+
 	// 6. Setup Fiber app
 	app := fiber.New(fiber.Config{
 		AppName: "Backend Pretest AI API",
@@ -42,6 +47,13 @@ func main() {
 			})
 		},
 	})
+	
+	// CORS Middleware
+	app.Use(cors.New(cors.Config{
+		AllowOrigins: "http://localhost:3000",
+		AllowHeaders: "Origin, Content-Type, Accept, Authorization",
+		AllowMethods: "GET, POST, PUT, DELETE, OPTIONS",
+	}))
 
 	// 7. Register semua route
 	router.Setup(app)

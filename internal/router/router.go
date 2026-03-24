@@ -7,6 +7,8 @@ import (
 	"backend-pretest-ai/internal/middleware"
 	"backend-pretest-ai/internal/repository"
 	"backend-pretest-ai/internal/service"
+	"backend-pretest-ai/pkg/ai"
+	"backend-pretest-ai/pkg/storage"
 )
 
 // @title           Backend Pretest AI API
@@ -35,17 +37,20 @@ func Setup(app *fiber.App) {
 	userHandler := handler.NewUserHandler(userSvc)
 
 	moduleRepo := repository.NewModuleRepository()
-	moduleSvc := service.NewModuleService(moduleRepo)
+	moduleSvc := service.NewModuleService(moduleRepo, storage.R2, ai.Client)
 	moduleHandler := handler.NewModuleHandler(moduleSvc)
 
 	summarySvc := service.NewSummaryService(moduleRepo)
 	summaryHandler := handler.NewSummaryHandler(summarySvc)
 
 	quizRepo := repository.NewQuizRepository()
-	quizSvc := service.NewQuizService(quizRepo, moduleRepo)
+	quizSvc := service.NewQuizService(quizRepo, moduleRepo, ai.Client)
 	quizHandler := handler.NewQuizHandler(quizSvc)
 
 	api := app.Group("/api/v1")
+
+	// Global middleware
+	api.Use(middleware.LoggerMiddleware())
 
 	// Health check
 	api.Get("/health", func(c *fiber.Ctx) error {

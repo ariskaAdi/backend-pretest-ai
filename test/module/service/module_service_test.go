@@ -116,10 +116,7 @@ func setupModuleServiceTest(t *testing.T) (service.ModuleServiceContract, *MockM
 	mockR2 := new(MockR2Uploader)
 	mockAI := new(MockAISummarizer)
 
-	service.R2Client = mockR2
-	service.AIClient = mockAI
-
-	srv := service.NewModuleService(mockRepo)
+	srv := service.NewModuleService(mockRepo, mockR2, mockAI)
 
 	return srv, mockRepo, mockR2, mockAI
 }

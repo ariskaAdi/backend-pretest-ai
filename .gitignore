@@ -1,2 +1,22 @@
-.env
+# prompt
 prompt.txt
+
+# Environment
+.env
+
+# Binary
+bin/
+
+# Coverage
+coverage.out
+coverage.html
+
+# Log files (keep folder, ignore isi)
+log/*.log
+
+# Go
+vendor/
+
+# OS
+.DS_Store
+Thumbs.db
