@@ -202,13 +202,21 @@ Authorization: Bearer <token>
 |---|---|---|---|
 | POST | `/auth/register` | ❌ | Daftar akun baru, kirim OTP ke email |
 | POST | `/auth/verify-otp` | ❌ | Verifikasi OTP untuk aktivasi akun |
+| POST | `/auth/resend-otp` | ❌ | Kirim ulang OTP ke email |
 | POST | `/auth/login` | ❌ | Login, return JWT token |
 | POST | `/auth/logout` | ✅ | Logout (stateless) |
+
+### Webhook
+
+| Method | Endpoint | Auth | Deskripsi |
+|---|---|---|---|
+| POST | `/webhook/lynk` | ❌ | Webhook Lynk.id (Secret validated) |
 
 ### User
 
 | Method | Endpoint | Auth | Deskripsi |
 |---|---|---|---|
+| GET | `/user/me` | ✅ | Ambil data profil user yang login |
 | POST | `/user/email/request-update` | ✅ | Request ganti email, kirim OTP ke email baru |
 | POST | `/user/email/verify-update` | ✅ | Konfirmasi OTP, update email |
 
@@ -375,6 +383,20 @@ make test-service  # Test hanya layer service
 make test-handler  # Test hanya layer handler
 make env           # Buat .env dari .env.example
 ```
+
+---
+
+## Quota & Monetisasi
+
+Aplikasi menggunakan sistem quota per user untuk membatasi penggunaan layanan AI.
+
+| Role | Quiz Quota | Summarize Quota | Cara Mendapat |
+|---|---|---|---|
+| **guest** | 1 | 1 | Otomatis saat register |
+| **member** | accumulate | accumulate | Beli paket di Lynk.id |
+| **admin** | unlimited | unlimited | - |
+
+Webhook dari Lynk.id akan otomatis menambah quota dan mengupdate role setelah pembayaran berhasil.
 
 ---
 

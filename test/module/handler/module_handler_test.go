@@ -53,6 +53,11 @@ func (m *MockModuleService) Delete(ctx context.Context, userID string, moduleID 
 	return args.Error(0)
 }
 
+func (m *MockModuleService) RetrySummarize(ctx context.Context, userID string, moduleID string) error {
+	args := m.Called(ctx, userID, moduleID)
+	return args.Error(0)
+}
+
 // --- Helpers ---
 
 func setupApp(h *handler.ModuleHandler) *fiber.App {
@@ -138,10 +143,12 @@ func TestModuleHandler_Upload(t *testing.T) {
 		app := setupApp(h)
 
 		modResp := &dto.ModuleResponse{
-			ID:           "mod-1",
-			Title:        "Valid Title",
-			FileURL:      "http://test.com/file.pdf",
-			CreatedAt:    time.Now().Format(time.RFC3339),
+			ID:              "mod-1",
+			Title:           "Valid Title",
+			FileURL:         "http://test.com/file.pdf",
+			IsSummarized:    false,
+			SummarizeFailed: false,
+			CreatedAt:       time.Now().Format(time.RFC3339),
 		}
 
 		mockSvc.On("Upload", mock.Anything, "user1", mock.Anything, mock.MatchedBy(func(req dto.UploadModuleRequest) bool {

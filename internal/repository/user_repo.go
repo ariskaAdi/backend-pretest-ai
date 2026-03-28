@@ -17,6 +17,8 @@ type UserRepository interface {
 	UpdateOTP(ctx context.Context, userID string, otp string) error
 	VerifyUser(ctx context.Context, userID string) error
 	UpdateEmail(ctx context.Context, userID string, newEmail string) error
+	UpdateQuotaAndRole(ctx context.Context, email string, quizQuota int, summarizeQuota int) error
+	UpdateRole(ctx context.Context, email string, role domain.Role) error
 }
 
 type userRepository struct {
@@ -80,4 +82,21 @@ func (r *userRepository) UpdateEmail(ctx context.Context, userID string, newEmai
 			"is_verified": true,
 			"otp":         "",
 		}).Error
+}
+
+func (r *userRepository) UpdateQuotaAndRole(ctx context.Context, email string, quizQuota int, summarizeQuota int) error {
+	return r.db.WithContext(ctx).
+		Model(&domain.User{}).
+		Where("email = ?", email).
+		Updates(map[string]any{
+			"quiz_quota":      gorm.Expr("quiz_quota + ?", quizQuota),
+			"summarize_quota": gorm.Expr("summarize_quota + ?", summarizeQuota),
+		}).Error
+}
+
+func (r *userRepository) UpdateRole(ctx context.Context, email string, role domain.Role) error {
+	return r.db.WithContext(ctx).
+		Model(&domain.User{}).
+		Where("email = ?", email).
+		Update("role", role).Error
 }

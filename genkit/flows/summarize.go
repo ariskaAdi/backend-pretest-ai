@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/core"
 	"github.com/firebase/genkit/go/genkit"
 )
@@ -24,15 +23,13 @@ func RegisterSummarizeFlow(g *genkit.Genkit) *core.Flow[*SummarizeInput, *Summar
 				return nil, fmt.Errorf("pdf_text tidak boleh kosong")
 			}
 
-			// Potong teks kalau terlalu panjang — Gemini ada batas token
+			// Potong teks kalau terlalu panjang — Groq ada batas token
 			text := input.PdfText
 			if len(text) > 12000 {
 				text = text[:12000]
 			}
 
-			resp, err := genkit.GenerateText(ctx, g,
-				ai.WithPrompt(buildSummarizePrompt(text)),
-			)
+			resp, err := generateWithGroq(buildSummarizePrompt(text))
 			if err != nil {
 				return nil, fmt.Errorf("gagal generate summary: %w", err)
 			}

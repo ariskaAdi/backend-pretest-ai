@@ -31,6 +31,9 @@ migrate: ## Jalankan semua migration SQL ke DB
 	docker exec -i pretest-ai-postgres psql -U postgres -d pretestai < migrations/001_create_users.sql
 	docker exec -i pretest-ai-postgres psql -U postgres -d pretestai < migrations/002_create_modules.sql
 	docker exec -i pretest-ai-postgres psql -U postgres -d pretestai < migrations/004_create_quizzes.sql
+	docker exec -i pretest-ai-postgres psql -U postgres -d pretestai < migrations/005_add_summarize_failed_to_modules.sql
+	docker exec -i pretest-ai-postgres psql -U postgres -d pretestai < migrations/006_update_user_quotas.sql
+	docker exec -i pretest-ai-postgres psql -U postgres -d pretestai < migrations/007_create_lynk_transactions.sql
 	@echo "✅ Migration selesai"
 
 migrate-fresh: ## Drop semua tabel lalu migrate ulang (HATI-HATI: hapus semua data)

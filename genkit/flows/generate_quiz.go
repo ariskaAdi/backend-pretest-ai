@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/firebase/genkit/go/ai"
 	"github.com/firebase/genkit/go/core"
 	"github.com/firebase/genkit/go/genkit"
 )
@@ -35,9 +34,7 @@ func RegisterGenerateQuizFlow(g *genkit.Genkit) *core.Flow[*GenerateQuizInput, *
 				return nil, fmt.Errorf("num_questions harus lebih dari 0")
 			}
 
-			resp, err := genkit.GenerateText(ctx, g,
-				ai.WithPrompt(buildQuizPrompt(input.Summary, input.NumQuestions)),
-			)
+			resp, err := generateWithGroq(buildQuizPrompt(input.Summary, input.NumQuestions))
 			if err != nil {
 				return nil, fmt.Errorf("gagal generate quiz: %w", err)
 			}
@@ -80,7 +77,7 @@ Kembalikan HANYA JSON tanpa penjelasan apapun, tanpa markdown, tanpa backtick, d
 }`, numQuestions, summary)
 }
 
-func parseQuizResponse(raw string, expectedCount int) (*GenerateQuizOutput, error) {
+func parseQuizResponse(raw string, _ int) (*GenerateQuizOutput, error) {
 	// Bersihkan kalau AI masih tambahkan markdown
 	cleaned := cleanJSON(raw)
 

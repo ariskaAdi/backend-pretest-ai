@@ -75,7 +75,8 @@ func toSummaryResponse(module *domain.Module) *dto.SummaryResponse {
 		ModuleID:     module.ID,
 		ModuleTitle:  module.Title,
 		Summary:      module.Summary,
-		IsSummarized: module.IsSummarized,
-		UpdatedAt:    module.UpdatedAt.Format(time.RFC3339),
+		IsSummarized:    module.IsSummarized,
+		SummarizeFailed: module.SummarizeFailed,
+		UpdatedAt:       module.UpdatedAt.Format(time.RFC3339),
 	}
 }

@@ -49,6 +49,19 @@ func (m *MockUserService) VerifyUpdateEmail(ctx context.Context, userID string, 
 	return args.Error(0)
 }
 
+func (m *MockUserService) GetMe(ctx context.Context, userID string) (*dto.UserResponse, error) {
+	args := m.Called(ctx, userID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*dto.UserResponse), args.Error(1)
+}
+
+func (m *MockUserService) ResendOTP(ctx context.Context, req dto.ResendOTPRequest) error {
+	args := m.Called(ctx, req)
+	return args.Error(0)
+}
+
 func TestUserHandler_Register_Success(t *testing.T) {
 	mockService := new(MockUserService)
 	h := handler.NewUserHandler(mockService)

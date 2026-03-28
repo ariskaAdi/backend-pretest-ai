@@ -1,219 +1,405 @@
-# ISSUE: Unit Test — Summary Case
-
-## Status
-`open`
-
-## Priority
-`medium`
-
-## Assignee
-_unassigned_
+## 🎯 Feature: Integrasi Lynk Webhook untuk Otomatisasi Quota (Payment → Credit)
 
 ---
 
-## Background & Alur Summary Case
+## 📌 Overview
 
-Summary **tidak punya tabel sendiri** — data summary disimpan langsung di tabel `modules` (field `summary`, `is_summarized`). Summary case hanya menyediakan akses dan editing terhadap summary yang sudah ada.
+aku ingin merubah aplikasi ini berdasarkan quota agar bisa di monetize
+Mengimplementasikan integrasi webhook dari Lynk.id untuk otomatis menambahkan quota ke user setelah pembayaran berhasil.
 
----
+Tujuan:
 
-### Dari Mana Summary Berasal?
-
-Summary di-generate otomatis oleh AI saat user upload PDF di **case module**:
-
-```
-User upload PDF
-    └── module_service.Upload()
-            └── goroutine async
-                    └── Genkit summarizeModule
-                            └── modules.summary = "..."
-                            └── modules.is_summarized = true
-```
-
-Summary case hanya membaca dan mengedit hasil tersebut. Tidak ada proses AI di summary case.
+* agar setiap layanan dibedakan karena api dari ai terbatas
+* Memberikan pengalaman seamless: bayar → langsung bisa pakai
+* Menjadi fondasi monetisasi SaaS berbasis quota
 
 ---
 
-### Alur 1 — GET Summary `GET /api/v1/summary/:moduleId`
+## 🧩 Business Logic
 
-```
-SummaryService.GetByModuleID()
-    │
-    ├── FindByID(moduleID)
-    │       ├── nil              → ErrModuleNotFound → 404
-    │       └── UserID != userID → ErrNotModuleOwner → 401
-    │
-    ├── Cek is_summarized == true && summary != ""
-    │       └── false/kosong → ErrSummaryNotReady → 400
-    │               "summary belum tersedia, modul masih diproses"
-    │
-    └── Return SummaryResponse
-            ├── module_id
-            ├── module_title
-            ├── summary      ← teks ringkasan dari AI
-            ├── is_summarized: true
-            └── updated_at
-```
+### 💰 Produk di Lynk
 
-> Kalau user baru saja upload PDF dan langsung hit endpoint ini, kemungkinan summary belum selesai karena AI masih proses di background. Client perlu polling atau cek `is_summarized` dari `GET /modules/:id`.
+| Nama Produk | Harga    | Quiz Quota | Summarize Quota |
+| ----------- | -------- | ---------- | --------------- |
+| free tier (akun baru untuk promosi) | 0 | 1 | 1 |
+| Paket 4x    | Rp10.000 | 4          | 4               |
+| Paket 10x   | Rp20.000 | 10         | 10              |
+
+> 📌 Quota bersifat **accumulate** — setiap pembelian menambah quota yang sudah ada, tidak me-reset.
 
 ---
 
-### Alur 2 — Edit Summary `PUT /api/v1/summary/:moduleId`
+### 🔄 Flow Sistem
 
 ```
-Client PUT /api/v1/summary/:moduleId
+User bayar di Lynk
+        ↓
+Lynk kirim webhook ke backend
+        ↓
+Backend verifikasi secret/signature
+        ↓
+Backend verifikasi payload
+        ↓
+Idempotency check (transaction_id)
+        ↓
+Mapping product → quota (quiz + summarize)
+        ↓
+Update user.quiz_quota + user.summarize_quota
+        ↓
+Update user.role → "member" (jika sebelumnya "guest")
+        ↓
+User login → quota & role terupdate otomatis
+```
+
+### 🎭 Role Flow
+
+```
+Daftar akun baru → role: "guest"  → quiz_quota: 1, summarize_quota: 1
+Beli paket di Lynk → role: "member" → quota bertambah sesuai paket
+Admin → tidak ada batasan quota
+```
+
+---
+
+## 🧱 Backend Implementation
+
+### 1. Endpoint Webhook
+
+```http
+POST /webhook/lynk
+```
+
+* Public endpoint (tanpa auth JWT)
+* Wajib validasi secret
+
+---
+
+### 2. Payload Structure (Expected)
+
+```json
 {
-    "summary": "Ringkasan yang sudah diedit user..."
+  "email": "user@email.com",
+  "product_name": "Paket 10x",
+  "amount": 20000,
+  "status": "success",
+  "transaction_id": "abc123"
 }
-
-SummaryService.UpdateManual()
-    │
-    ├── FindByID(moduleID)
-    │       ├── nil              → ErrModuleNotFound → 404
-    │       └── UserID != userID → ErrNotModuleOwner → 401
-    │
-    ├── moduleRepo.UpdateSummaryManual()
-    │       └── UPDATE modules SET summary = ? WHERE id = ?
-    │           (is_summarized tetap true, tidak diubah)
-    │
-    └── Return SummaryResponse dengan summary yang baru
 ```
 
-> `UpdateSummaryManual` berbeda dari `UpdateSummary` (yang dipakai AI). AI mengeset `is_summarized = true`, sedangkan edit manual hanya update field `summary` saja — `is_summarized` tidak disentuh karena sudah true.
+> ⚠️ Field actual bisa berbeda — **wajib verifikasi ke docs resmi Lynk sebelum implementasi**:
+> - Referensi docs: https://documenter.getpostman.com/view/43601478/2sBXc8o3kn
+> - Konfirmasi nama field exak: apakah `product_name`, `item_name`, atau lainnya?
+> - Konfirmasi nilai `status`: apakah `"success"`, `"paid"`, `"settlement"`, atau lainnya?
+> - Konfirmasi format `transaction_id` dari Lynk
 
 ---
 
-### Kenapa Tidak Ada Re-Summarize?
-
-Re-summarize (generate ulang summary dari AI) sengaja tidak dimasukkan ke scope ini. Kalau user merasa summary AI kurang bagus, cukup edit manual. Ini lebih simpel dan tidak membuang token Gemini.
-
----
-
-## Endpoint
-
-| Method | Path | Auth | Fungsi |
-|---|---|---|---|
-| GET | `/api/v1/summary/:moduleId` | ✅ | Ambil summary modul |
-| PUT | `/api/v1/summary/:moduleId` | ✅ | Edit summary manual |
-
----
-
-## Task 1 — Interface sudah ada
-
-`SummaryServiceContract` sudah didefinisikan di `internal/service/summary_service.go`:
+### 3. Handler Logic
 
 ```go
-type SummaryServiceContract interface {
-    GetByModuleID(ctx context.Context, userID string, moduleID string) (*dto.SummaryResponse, error)
-    UpdateManual(ctx context.Context, userID string, moduleID string, req dto.UpdateSummaryRequest) (*dto.SummaryResponse, error)
+func HandleLynkWebhook(c *fiber.Ctx) error {
+  var payload LynkWebhookPayload
+
+  if err := c.BodyParser(&payload); err != nil {
+    return c.SendStatus(400)
+  }
+
+  // 1. Validasi status
+  if payload.Status != "success" {
+    return c.SendStatus(200)
+  }
+
+  // 2. Idempotency check
+  if isProcessed(payload.TransactionID) {
+    return c.SendStatus(200)
+  }
+
+  // 3. Mapping produk → quota
+  quota := mapProductToQuota(payload.ProductName)
+
+  // 4. Update quota user (quiz + summarize)
+  quizQuota, summarizeQuota := mapProductToQuota(payload.ProductName)
+  db.Model(&User{}).
+    Where("email = ?", payload.Email).
+    Updates(map[string]interface{}{
+      "quiz_quota":      gorm.Expr("quiz_quota + ?", quizQuota),
+      "summarize_quota": gorm.Expr("summarize_quota + ?", summarizeQuota),
+    })
+
+  // 5. Update role ke "member" jika masih "guest"
+  db.Model(&User{}).
+    Where("email = ? AND role = ?", payload.Email, "guest").
+    Update("role", "member")
+
+  // 6. Simpan transaksi
+  saveTransaction(payload)
+
+  return c.SendStatus(200)
 }
 ```
 
-`SummaryHandler` sudah menggunakan interface ini. `SummaryService` menggunakan `ModuleRepositoryContract` yang sudah ada — tidak perlu repository baru.
-
 ---
 
-## Task 2 — Unit Test: `test/summary/service/summary_service_test.go`
+## 🗄️ Database Changes
 
-### Setup mock:
-Gunakan `MockModuleRepository` yang sudah dibuat di `ISSUE_MODULE_TEST.md` — tidak perlu buat ulang.
+### 1. Update Table `users`
 
-### Test case `GetByModuleID()`:
-
-| # | Skenario | Expected |
-|---|---|---|
-| 1 | Modul tidak ditemukan | `ErrModuleNotFound` |
-| 2 | Modul milik user lain | `ErrNotModuleOwner` |
-| 3 | `is_summarized = false` | `ErrSummaryNotReady` |
-| 4 | `is_summarized = true` tapi `summary = ""` | `ErrSummaryNotReady` |
-| 5 | Sukses | return `SummaryResponse` dengan summary terisi |
-| 6 | Sukses | `module_title` ikut ter-include di response |
-
-### Test case `UpdateManual()`:
-
-| # | Skenario | Expected |
-|---|---|---|
-| 1 | Modul tidak ditemukan | `ErrModuleNotFound` |
-| 2 | Modul milik user lain | `ErrNotModuleOwner` |
-| 3 | DB error saat update | return error |
-| 4 | Sukses | return `SummaryResponse` dengan summary baru |
-| 5 | Sukses | `is_summarized` tetap `true` setelah edit |
-| 6 | Summary kurang dari 10 karakter | validasi di handler, bukan service |
-
----
-
-## Task 3 — Unit Test: `test/summary/handler/summary_handler_test.go`
-
-| Endpoint | Skenario | Expected HTTP |
-|---|---|---|
-| `GET /summary/:moduleId` | Modul tidak ditemukan | `404` |
-| `GET /summary/:moduleId` | Bukan pemilik | `401` |
-| `GET /summary/:moduleId` | Summary belum siap | `400` |
-| `GET /summary/:moduleId` | Sukses | `200` + summary data |
-| `PUT /summary/:moduleId` | Body kosong | `400` |
-| `PUT /summary/:moduleId` | Summary < 10 karakter | `400` |
-| `PUT /summary/:moduleId` | Modul tidak ditemukan | `404` |
-| `PUT /summary/:moduleId` | Sukses | `200` + summary baru |
-
----
-
-## Struktur File
-
+```sql
+ALTER TABLE users ADD COLUMN quiz_quota INT DEFAULT 1;
+ALTER TABLE users ADD COLUMN summarize_quota INT DEFAULT 1;
+ALTER TABLE users ADD COLUMN role VARCHAR(20) DEFAULT 'guest';
 ```
-test  /
-├── summary/
-│   ├── service/
-│   │   └── summary_service_test.go   ← buat baru
-│   └── handler/
-│       └── summary_handler_test.go   ← buat baru
+
+> 📌 Free tier diberikan otomatis saat registrasi (`quiz_quota = 1`, `summarize_quota = 1`, `role = "guest"`).
+> Saat beli paket, role diupdate ke `"member"` dan quota di-accumulate.
+
+---
+
+### 2. Table: `lynk_transactions`
+
+```sql
+CREATE TABLE lynk_transactions (
+  id UUID PRIMARY KEY,
+  transaction_id VARCHAR UNIQUE,
+  email VARCHAR(255),
+  product_name VARCHAR(255),
+  amount INT,
+  status VARCHAR(50),
+  created_at TIMESTAMP
+);
 ```
 
 ---
 
+## 🔐 Security
 
-## Task 4 — Dokumentasi Swagger: `doc/summary/swagger.yml`
+### 1. Webhook Secret / Signature Validation
 
-buat dokumentasi detail untuk summary case di folder tsb
+* Set secret di Lynk webhook settings
+* Validasi di header
 
-## Struktur File
-
+```go
+if c.Get("X-Webhook-Secret") != os.Getenv("LYNK_WEBHOOK_SECRET") {
+  return c.SendStatus(401)
+}
 ```
-doc  /
-├── summary/
-│   └── summary.yml   ← buat baru
+
+> ⚠️ **Perlu dikonfirmasi ke docs Lynk**: apakah menggunakan plain secret di header (`X-Webhook-Secret`)
+> atau HMAC-SHA256 signature (seperti `X-Signature`)? Jika HMAC, implementasi berbeda:
+> ```go
+> // Contoh HMAC jika ternyata Lynk pakai signature
+> mac := hmac.New(sha256.New, []byte(os.Getenv("LYNK_WEBHOOK_SECRET")))
+> mac.Write(c.Body())
+> expected := hex.EncodeToString(mac.Sum(nil))
+> if c.Get("X-Signature") != expected {
+>   return c.SendStatus(401)
+> }
+> ```
+
+---
+
+### 2. Idempotency (WAJIB)
+
+Webhook bisa dikirim ulang.
+
+Solusi:
+
+* Gunakan `transaction_id` sebagai unique key
+* Jika sudah ada → skip
+
+---
+
+## ⚠️ Edge Cases
+
+### 1. Duplicate Webhook
+
+* Harus aman (tidak double tambah quota)
+
+---
+
+### 2. Email Tidak Ditemukan
+
+Kemungkinan:
+
+* User belum register
+* Email berbeda
+
+Solusi:
+
+* Skip + log
+* (Future) simpan sebagai pending credit
+
+---
+
+### 3. Mapping Produk Gagal
+
+Jika:
+
+* nama produk berubah di Lynk
+
+Solusi:
+
+* fallback: ignore
+* log error
+
+---
+
+### 4. Race Condition
+
+Gunakan atomic update di DB level:
+
+```go
+gorm.Expr("quiz_quota + ?", quizQuota)
+gorm.Expr("summarize_quota + ?", summarizeQuota)
 ```
 
 ---
 
-## Catatan Penting
+### 5. User Belum Daftar Saat Bayar
 
-- Summary service **reuse** `ModuleRepositoryContract` — tidak ada repository baru
-- Mock yang dipakai adalah `MockModuleRepository` dari issue module, tidak perlu duplikasi
-- `UpdateSummaryManual` hanya update field `summary`, tidak mengubah `is_summarized`
-- Validasi panjang minimum summary (`min=10`) ada di DTO/handler, bukan service
+Kemungkinan:
 
-```bash
-go test ./internal/service/... -v -race
-go test ./internal/handler/... -v
+* User bayar di Lynk sebelum register di aplikasi
+
+Solusi:
+
+* Skip + log warning
+* (Future) simpan sebagai **pending credit** — saat user register dengan email sama, quota langsung diberikan
+
+---
+
+## 🧪 Testing Plan
+
+### 1. Local Testing
+
+* Gunakan webhook test dari Lynk
+* Expose local server (ngrok)
+
+---
+
+### 2. Test Cases
+
+* [ ] Payment success → quiz_quota bertambah
+* [ ] Payment success → summarize_quota bertambah
+* [ ] Payment success → role berubah dari "guest" ke "member"
+* [ ] Payment success → role "member" tidak berubah jika sudah member
+* [ ] Payment failed → tidak ada perubahan quota maupun role
+* [ ] Duplicate webhook → tidak double tambah quota
+* [ ] Email tidak ditemukan → tidak crash, log warning
+* [ ] Produk tidak dikenal → tidak error, log warning
+* [ ] Secret/signature salah → return 401
+* [ ] Beli paket 2x → quota accumulate (bukan replace)
+
+---
+
+## 📊 Logging
+
+Tambahkan log:
+
+* incoming webhook
+* payload
+* result (success / skipped / error)
+
+---
+
+## 🚀 Acceptance Criteria
+
+* [ ] Webhook endpoint aktif
+* [ ] quiz_quota bertambah otomatis setelah payment
+* [ ] summarize_quota bertambah otomatis setelah payment
+* [ ] Role otomatis naik dari "guest" ke "member" setelah payment
+* [ ] Tidak ada duplicate processing
+* [ ] Aman (secret/signature validated)
+* [ ] Tidak crash jika data tidak valid
+* [ ] User bisa langsung pakai tanpa redeem
+* [ ] Free tier quota (1 quiz + 1 summarize) diberikan otomatis saat registrasi
+
+---
+
+## 🧠 Notes
+
+* Gunakan email sebagai identifier utama
+* Pastikan user menggunakan email yang sama saat pembayaran dan saat register
+* User wajib sudah daftar akun sebelum bayar (untuk MVP)
+* Fokus ke reliability, bukan kompleksitas
+* Quota bersifat accumulate — pembelian berulang menambah, tidak me-reset
+* **Wajib verifikasi payload fields & auth mechanism ke docs Lynk sebelum coding**: https://documenter.getpostman.com/view/43601478/2sBXc8o3kn
+
+---
+
+## 🎭 Role & Quota Rules
+
+| Role   | Quiz Quota  | Summarize Quota | Keterangan                          |
+| ------ | ----------- | --------------- | ----------------------------------- |
+| guest  | 1 (default) | 1 (default)     | Diberikan saat registrasi           |
+| member | sesuai paket (accumulate) | sesuai paket (accumulate) | Naik otomatis setelah beli |
+| admin  | unlimited   | unlimited       | Tidak ada batasan akses             |
+
+---
+
+## 📁 Dokumentasi (`doc/`)
+
+Buat file dokumentasi baru di folder `doc/` (sejajar dengan folder `doc/user`, `doc/quiz`, dll):
+
+### File yang perlu dibuat
+
+```
+doc/
+└── webhook/
+    └── lynk.md       ← dokumentasi endpoint webhook Lynk
+```
+
+### Isi `doc/webhook/lynk.md`
+
+Dokumentasikan:
+
+* Endpoint: `POST /webhook/lynk`
+* Auth: secret/signature validation (tidak pakai JWT)
+* Request headers yang dibutuhkan
+* Request body (payload dari Lynk) — field, tipe, keterangan
+* Response: selalu `200 OK` kecuali secret salah (`401`)
+* Business logic: mapping produk → quota + role update
+* Contoh payload sukses & gagal
+* Referensi: link ke docs Lynk
+
+---
+
+## 📝 README.md Update
+
+Update [README.md](README.md) dengan tambahan berikut:
+
+### 1. Tambah di section Tech Stack / Integrasi
+
+```markdown
+| Payment | Lynk.id (webhook) |
+```
+
+### 2. Tambah section baru: Quota & Monetisasi
+
+```markdown
+## Quota & Monetisasi
+
+Aplikasi menggunakan sistem quota per user untuk membatasi penggunaan layanan AI.
+
+| Role   | Quiz Quota  | Summarize Quota | Cara Mendapat         |
+|--------|-------------|------------------|-----------------------|
+| guest  | 1           | 1                | Otomatis saat register |
+| member | accumulate  | accumulate       | Beli paket di Lynk.id |
+| admin  | unlimited   | unlimited        | -                     |
+
+Webhook dari Lynk.id akan otomatis menambah quota dan mengupdate role setelah pembayaran berhasil.
+```
+
+### 3. Tambah di section Arsitektur / Flow
+
+Tambahkan node Lynk.id ke diagram arsitektur:
+
+```
+User bayar → Lynk.id → POST /webhook/lynk → update quota + role
 ```
 
 ---
 
-## Ekspektasi Coverage
+## 🚀 Priority
 
-| Package | Target |
-|---|---|
-| `test/summary/service/summary_service_test.go` | ≥ 80% |
-| `test/summary/handler/summary_handler_test.go` | ≥ 60% |
-
----
-
-## Definition of Done
-
-- [ ] Semua test case di tabel atas diimplementasi
-- [ ] Mock reuse dari `MockModuleRepository` (tidak duplikasi)
-- [ ] `go test ./... -race` lulus tanpa error
-- [ ] Coverage `summary_service` minimal 80%
-- [ ] Dokumentasi summary case selesai
-
+**HIGH — Core monetization feature**

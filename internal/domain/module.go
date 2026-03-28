@@ -11,6 +11,7 @@ type Module struct {
 	RawText   string    `gorm:"type:text"`
 	Summary   string    `gorm:"type:text"`
 	IsSummarized bool   `gorm:"default:false"`
+	SummarizeFailed bool `gorm:"default:false"`
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }

@@ -25,6 +25,7 @@ var (
 	ErrInvalidCredentials   = errors.New("email atau password salah")
 	ErrEmailSameAsCurrent   = errors.New("email baru tidak boleh sama dengan email lama")
 	ErrNewEmailAlreadyInUse = errors.New("email baru sudah digunakan akun lain")
+	ErrAlreadyVerified      = errors.New("email sudah terverifikasi")
 )
 
 type UserService interface {
@@ -33,6 +34,8 @@ type UserService interface {
 	Login(ctx context.Context, req dto.LoginRequest) (*dto.LoginResponse, error)
 	RequestUpdateEmail(ctx context.Context, userID string, req dto.UpdateEmailRequest) error
 	VerifyUpdateEmail(ctx context.Context, userID string, req dto.VerifyUpdateEmailRequest) error
+	GetMe(ctx context.Context, userID string) (*dto.UserResponse, error)
+	ResendOTP(ctx context.Context, req dto.ResendOTPRequest) error
 }
 
 type userService struct {
@@ -138,8 +141,10 @@ func (s *userService) Login(ctx context.Context, req dto.LoginRequest) (*dto.Log
 			ID:         user.ID,
 			Name:       user.Name,
 			Email:      user.Email,
-			Role:       string(user.Role),
-			IsVerified: user.IsVerified,
+			Role:           string(user.Role),
+			QuizQuota:      user.QuizQuota,
+			SummarizeQuota: user.SummarizeQuota,
+			IsVerified:     user.IsVerified,
 		},
 	}, nil
 }
@@ -213,6 +218,59 @@ func (s *userService) VerifyUpdateEmail(ctx context.Context, userID string, req 
 	}
 
 	return s.userRepo.UpdateEmail(ctx, userID, req.NewEmail)
+}
+
+// GetMe — ambil profil user yang sedang login
+func (s *userService) GetMe(ctx context.Context, userID string) (*dto.UserResponse, error) {
+	user, err := s.userRepo.FindByID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if user == nil {
+		return nil, ErrUserNotFound
+	}
+
+	return &dto.UserResponse{
+		ID:         user.ID,
+		Name:       user.Name,
+		Email:      user.Email,
+		Role:           string(user.Role),
+		QuizQuota:      user.QuizQuota,
+		SummarizeQuota: user.SummarizeQuota,
+		IsVerified:     user.IsVerified,
+	}, nil
+}
+
+// ResendOTP — kirim ulang OTP untuk user yang belum verified
+func (s *userService) ResendOTP(ctx context.Context, req dto.ResendOTPRequest) error {
+	user, err := s.userRepo.FindByEmail(ctx, req.Email)
+	if err != nil {
+		return err
+	}
+	if user == nil {
+		return ErrUserNotFound
+	}
+	if user.IsVerified {
+		return ErrAlreadyVerified
+	}
+
+	otp, err := generateOTP()
+	if err != nil {
+		return fmt.Errorf("gagal generate OTP: %w", err)
+	}
+
+	if err := s.userRepo.UpdateOTP(ctx, user.ID, otp); err != nil {
+		return err
+	}
+
+	// Kirim OTP baru lewat email — goroutine
+	go func() {
+		if err := mailer.Client.SendOTP(user.Email, otp); err != nil {
+			log.Printf("[user_service] gagal kirim ulang OTP ke %s: %v", user.Email, err)
+		}
+	}()
+
+	return nil
 }
 
 // generateOTP — buat 6 digit angka acak yang aman secara kriptografi

@@ -59,11 +59,10 @@ func LoggerMiddleware() fiber.Handler {
 			"ip":       c.IP(),
 		}
 
-		// Hanya log kalau status 4xx atau 5xx
-		switch {
-		case status >= 500:
+		// Log kalau status 4xx atau 5xx
+		if status >= 500 {
 			Logger.WithFields(fields).WithError(err).Error("server error")
-		case status >= 400:
+		} else if status >= 400 {
 			Logger.WithFields(fields).WithError(err).Warn("client error")
 		}
 

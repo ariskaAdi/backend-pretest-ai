@@ -9,7 +9,6 @@ import (
 	"syscall"
 
 	"github.com/firebase/genkit/go/genkit"
-	"github.com/firebase/genkit/go/plugins/googlegenai"
 	"github.com/joho/godotenv"
 
 	"backend-pretest-ai/genkit/flows"
@@ -21,19 +20,15 @@ func main() {
 		log.Println("[genkit] .env not found, using system env")
 	}
 
-	apiKey := os.Getenv("GEMINI_API_KEY")
-	if apiKey == "" {
-		log.Fatal("[genkit] GEMINI_API_KEY tidak di-set")
+	if os.Getenv("GROQ_API_KEY") == "" {
+		log.Fatal("[genkit] GROQ_API_KEY tidak di-set")
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// Init Genkit dengan plugin Google AI (Gemini)
-	g := genkit.Init(ctx,
-		genkit.WithPlugins(&googlegenai.GoogleAI{}),
-		genkit.WithDefaultModel("googleai/gemini-1.5-flash"),
-	)
+	// Init Genkit — model calls handled directly via Groq API
+	g := genkit.Init(ctx)
 
 	// Register semua flows dan simpan referensinya
 	summarizeFlow := flows.RegisterSummarizeFlow(g)

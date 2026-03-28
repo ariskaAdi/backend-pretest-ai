@@ -12,8 +12,9 @@ type ModuleResponse struct {
 	ID           string `json:"id"`
 	Title        string `json:"title"`
 	FileURL      string `json:"file_url"`
-	IsSummarized bool   `json:"is_summarized"`
-	CreatedAt    string `json:"created_at"`
+	IsSummarized    bool   `json:"is_summarized"`
+	SummarizeFailed bool   `json:"summarize_failed"`
+	CreatedAt       string `json:"created_at"`
 }
 
 type ModuleDetailResponse struct {
@@ -21,6 +22,7 @@ type ModuleDetailResponse struct {
 	Title        string `json:"title"`
 	FileURL      string `json:"file_url"`
 	Summary      string `json:"summary"`
-	IsSummarized bool   `json:"is_summarized"`
-	CreatedAt    string `json:"created_at"`
+	IsSummarized    bool   `json:"is_summarized"`
+	SummarizeFailed bool   `json:"summarize_failed"`
+	CreatedAt       string `json:"created_at"`
 }

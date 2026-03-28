@@ -47,6 +47,10 @@ func Setup(app *fiber.App) {
 	quizSvc := service.NewQuizService(quizRepo, moduleRepo, ai.Client)
 	quizHandler := handler.NewQuizHandler(quizSvc)
 
+	lynkRepo := repository.NewLynkRepository()
+	lynkSvc := service.NewLynkService(lynkRepo, userRepo)
+	lynkHandler := handler.NewLynkHandler(lynkSvc)
+
 	api := app.Group("/api/v1")
 
 	// Global middleware
@@ -57,15 +61,21 @@ func Setup(app *fiber.App) {
 		return c.JSON(fiber.Map{"status": "ok"})
 	})
 
+	// --- Webhook routes (public) ---
+	webhook := api.Group("/webhook")
+	webhook.Post("/lynk", lynkHandler.HandleWebhook)
+
 	// --- Auth routes (public) ---
 	auth := api.Group("/auth")
 	auth.Post("/register", userHandler.Register)
 	auth.Post("/verify-otp", userHandler.VerifyOTP)
+	auth.Post("/resend-otp", userHandler.ResendOTP)
 	auth.Post("/login", userHandler.Login)
 	auth.Post("/logout", middleware.Auth(), userHandler.Logout)
 
 	// --- User routes (protected) ---
 	user := api.Group("/user", middleware.Auth())
+	user.Get("/me", userHandler.GetMe)
 	user.Post("/email/request-update", userHandler.RequestUpdateEmail)
 	user.Post("/email/verify-update", userHandler.VerifyUpdateEmail)
 
@@ -74,6 +84,7 @@ func Setup(app *fiber.App) {
 	modules.Post("/", moduleHandler.Upload)
 	modules.Get("/", moduleHandler.GetAll)
 	modules.Get("/:id", moduleHandler.GetByID)
+	modules.Post("/:id/retry-summarize", moduleHandler.RetrySummarize)
 	modules.Delete("/:id", moduleHandler.Delete)
 
 	// --- Summary routes (protected) ---

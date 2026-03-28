@@ -132,6 +132,68 @@ func (h *UserHandler) Logout(c *fiber.Ctx) error {
 	return response.OK(c, "logout berhasil", nil)
 }
 
+// GET /api/v1/user/me
+// GetMe godoc
+// @Summary      Get current user profile
+// @Description  Get the profile data of the currently logged-in user
+// @Tags         user
+// @Accept       json
+// @Produce      json
+// @Security     BearerAuth
+// @Success      200  {object}  response.APIResponse{data=dto.UserResponse}
+// @Failure      401  {object}  response.APIResponse
+// @Failure      404  {object}  response.APIResponse
+// @Failure      500  {object}  response.APIResponse
+// @Router       /user/me [get]
+func (h *UserHandler) GetMe(c *fiber.Ctx) error {
+	userID := c.Locals("userID").(string)
+
+	user, err := h.userService.GetMe(c.Context(), userID)
+	if err != nil {
+		if errors.Is(err, service.ErrUserNotFound) {
+			return response.NotFound(c, err.Error())
+		}
+		return response.InternalError(c, "gagal mengambil data user")
+	}
+
+	return response.OK(c, "berhasil", user)
+}
+
+// POST /api/v1/auth/resend-otp
+// ResendOTP godoc
+// @Summary      Resend OTP
+// @Description  Resend verification OTP to user email
+// @Tags         auth
+// @Accept       json
+// @Produce      json
+// @Param        request  body      dto.ResendOTPRequest  true  "Email for OTP resend"
+// @Success      200      {object}  response.APIResponse
+// @Failure      400      {object}  response.APIResponse
+// @Failure      404      {object}  response.APIResponse
+// @Failure      500      {object}  response.APIResponse
+// @Router       /auth/resend-otp [post]
+func (h *UserHandler) ResendOTP(c *fiber.Ctx) error {
+	var req dto.ResendOTPRequest
+	if err := c.BodyParser(&req); err != nil {
+		return response.BadRequest(c, "format request tidak valid")
+	}
+	if err := h.validate.Struct(req); err != nil {
+		return response.BadRequest(c, formatValidationError(err))
+	}
+
+	if err := h.userService.ResendOTP(c.Context(), req); err != nil {
+		if errors.Is(err, service.ErrUserNotFound) {
+			return response.NotFound(c, err.Error())
+		}
+		if errors.Is(err, service.ErrAlreadyVerified) {
+			return response.BadRequest(c, err.Error())
+		}
+		return response.InternalError(c, "gagal mengirim ulang OTP")
+	}
+
+	return response.OK(c, "OTP baru telah dikirim ke email kamu", nil)
+}
+
 // POST /api/v1/user/email/request-update
 // RequestUpdateEmail godoc
 // @Summary      Request email update

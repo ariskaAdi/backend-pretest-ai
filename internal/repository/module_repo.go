@@ -16,6 +16,8 @@ type ModuleRepositoryContract interface {
 	FindByUserID(ctx context.Context, userID string) ([]domain.Module, error)
 	UpdateSummary(ctx context.Context, moduleID string, summary string) error
 	UpdateSummaryManual(ctx context.Context, moduleID string, summary string) error
+	UpdateSummarizeStatus(ctx context.Context, moduleID string, isSummarized bool, summarizeFailed bool) error
+	MarkSummarizeFailed(ctx context.Context, moduleID string) error
 	Delete(ctx context.Context, id string) error
 }
 
@@ -65,6 +67,23 @@ func (r *ModuleRepository) UpdateSummaryManual(ctx context.Context, moduleID str
 		Model(&domain.Module{}).
 		Where("id = ?", moduleID).
 		Update("summary", summary).Error
+}
+
+func (r *ModuleRepository) MarkSummarizeFailed(ctx context.Context, moduleID string) error {
+	return r.db.WithContext(ctx).
+		Model(&domain.Module{}).
+		Where("id = ?", moduleID).
+		Update("summarize_failed", true).Error
+}
+
+func (r *ModuleRepository) UpdateSummarizeStatus(ctx context.Context, moduleID string, isSummarized bool, summarizeFailed bool) error {
+	return r.db.WithContext(ctx).
+		Model(&domain.Module{}).
+		Where("id = ?", moduleID).
+		Updates(map[string]any{
+			"is_summarized":    isSummarized,
+			"summarize_failed": summarizeFailed,
+		}).Error
 }
 
 func (r *ModuleRepository) Delete(ctx context.Context, id string) error {

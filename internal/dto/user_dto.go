@@ -27,14 +27,20 @@ type VerifyUpdateEmailRequest struct {
 	OTP      string `json:"otp"       validate:"required,len=6"`
 }
 
+type ResendOTPRequest struct {
+	Email string `json:"email" validate:"required,email"`
+}
+
 // --- Response ---
 
 type UserResponse struct {
-	ID         string `json:"id"`
-	Name       string `json:"name"`
-	Email      string `json:"email"`
-	Role       string `json:"role"`
-	IsVerified bool   `json:"is_verified"`
+	ID             string `json:"id"`
+	Name           string `json:"name"`
+	Email          string `json:"email"`
+	Role           string `json:"role"`
+	QuizQuota      int    `json:"quiz_quota"`
+	SummarizeQuota int    `json:"summarize_quota"`
+	IsVerified     bool   `json:"is_verified"`
 }
 
 type LoginResponse struct {

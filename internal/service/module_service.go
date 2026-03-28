@@ -32,6 +32,7 @@ type ModuleServiceContract interface {
 	GetAll(ctx context.Context, userID string) ([]dto.ModuleResponse, error)
 	GetByID(ctx context.Context, userID string, moduleID string) (*dto.ModuleDetailResponse, error)
 	Delete(ctx context.Context, userID string, moduleID string) error
+	RetrySummarize(ctx context.Context, userID string, moduleID string) error
 }
 
 type R2Uploader interface {
@@ -124,6 +125,10 @@ func (s *ModuleService) Upload(ctx context.Context, userID string, fileHeader *m
 		result, err := s.aiClient.Summarize(rawText)
 		if err != nil {
 			log.Printf("[module_service] gagal summarize modul %s: %v", module.ID, err)
+			// Simpan status gagal ke DB agar frontend bisa mendeteksi
+			if dbErr := s.moduleRepo.MarkSummarizeFailed(context.Background(), module.ID); dbErr != nil {
+				log.Printf("[module_service] gagal update status failed modul %s: %v", module.ID, dbErr)
+			}
 			return
 		}
 		if err := s.moduleRepo.UpdateSummary(context.Background(), module.ID, result.Summary); err != nil {
@@ -133,11 +138,12 @@ func (s *ModuleService) Upload(ctx context.Context, userID string, fileHeader *m
 	}()
 
 	return &dto.ModuleResponse{
-		ID:           module.ID,
-		Title:        module.Title,
-		FileURL:      module.FileURL,
-		IsSummarized: module.IsSummarized,
-		CreatedAt:    module.CreatedAt.Format(time.RFC3339),
+		ID:              module.ID,
+		Title:           module.Title,
+		FileURL:         module.FileURL,
+		IsSummarized:    module.IsSummarized,
+		SummarizeFailed: module.SummarizeFailed,
+		CreatedAt:       module.CreatedAt.Format(time.RFC3339),
 	}, nil
 }
 
@@ -151,11 +157,12 @@ func (s *ModuleService) GetAll(ctx context.Context, userID string) ([]dto.Module
 	var result []dto.ModuleResponse
 	for _, m := range modules {
 		result = append(result, dto.ModuleResponse{
-			ID:           m.ID,
-			Title:        m.Title,
-			FileURL:      m.FileURL,
-			IsSummarized: m.IsSummarized,
-			CreatedAt:    m.CreatedAt.Format(time.RFC3339),
+			ID:              m.ID,
+			Title:           m.Title,
+			FileURL:         m.FileURL,
+			IsSummarized:    m.IsSummarized,
+			SummarizeFailed: m.SummarizeFailed,
+			CreatedAt:       m.CreatedAt.Format(time.RFC3339),
 		})
 	}
 	return result, nil
@@ -175,12 +182,13 @@ func (s *ModuleService) GetByID(ctx context.Context, userID string, moduleID str
 	}
 
 	return &dto.ModuleDetailResponse{
-		ID:           module.ID,
-		Title:        module.Title,
-		FileURL:      module.FileURL,
-		Summary:      module.Summary,
-		IsSummarized: module.IsSummarized,
-		CreatedAt:    module.CreatedAt.Format(time.RFC3339),
+		ID:              module.ID,
+		Title:           module.Title,
+		FileURL:         module.FileURL,
+		Summary:         module.Summary,
+		IsSummarized:    module.IsSummarized,
+		SummarizeFailed: module.SummarizeFailed,
+		CreatedAt:       module.CreatedAt.Format(time.RFC3339),
 	}, nil
 }
 
@@ -198,4 +206,40 @@ func (s *ModuleService) Delete(ctx context.Context, userID string, moduleID stri
 	}
 
 	return s.moduleRepo.Delete(ctx, moduleID)
+}
+func (s *ModuleService) RetrySummarize(ctx context.Context, userID string, moduleID string) error {
+	module, err := s.moduleRepo.FindByID(ctx, moduleID)
+	if err != nil {
+		return err
+	}
+	if module == nil {
+		return ErrModuleNotFound
+	}
+	if module.UserID != userID {
+		return ErrNotModuleOwner
+	}
+	if module.IsSummarized {
+		return nil // Sudah selesai, tidak perlu retry
+	}
+
+	// Reset status gagal sebelum coba lagi
+	if err := s.moduleRepo.UpdateSummarizeStatus(ctx, moduleID, false, false); err != nil {
+		return fmt.Errorf("gagal reset status summarize: %w", err)
+	}
+
+	go func() {
+		result, err := s.aiClient.Summarize(module.RawText)
+		if err != nil {
+			log.Printf("[module_service] retry summarize gagal modul %s: %v", moduleID, err)
+			if dbErr := s.moduleRepo.MarkSummarizeFailed(context.Background(), moduleID); dbErr != nil {
+				log.Printf("[module_service] gagal update status failed modul %s: %v", moduleID, dbErr)
+			}
+			return
+		}
+		if err := s.moduleRepo.UpdateSummary(context.Background(), moduleID, result.Summary); err != nil {
+			log.Printf("[module_service] gagal simpan summary retry modul %s: %v", moduleID, err)
+		}
+	}()
+
+	return nil
 }

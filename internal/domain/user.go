@@ -18,6 +18,8 @@ type User struct {
 	Email     string    `gorm:"type:varchar(150);uniqueIndex;not null"`
 	Password  string    `gorm:"type:varchar(255);not null"`
 	Role      Role      `gorm:"type:varchar(20);not null;default:'guest'"`
+	QuizQuota      int  `gorm:"not null;default:1"`
+	SummarizeQuota int  `gorm:"not null;default:1"`
 	OTP       string    `gorm:"type:varchar(6)"`
 	IsVerified bool     `gorm:"default:false"`
 	CreatedAt time.Time

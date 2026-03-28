@@ -41,9 +41,12 @@ func main() {
 		AppName: "Backend Pretest AI API",
 		// Matikan error handler default agar semua error lewat response helper
 		ErrorHandler: func(c *fiber.Ctx, err error) error {
+			// Log internal error
+			middleware.Logger.Errorf("[server] internal error: %v", err)
+
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 				"success": false,
-				"error":   err.Error(),
+				"error":   "server error",
 			})
 		},
 	})

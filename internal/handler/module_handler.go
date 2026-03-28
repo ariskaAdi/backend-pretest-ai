@@ -62,7 +62,8 @@ func (h *ModuleHandler) Upload(c *fiber.Ctx) error {
 			errors.Is(err, service.ErrPDFNoText) {
 			return response.BadRequest(c, err.Error())
 		}
-		return response.InternalError(c, "gagal mengupload modul")
+		// Untuk error lain (500), kembalikan ke Fiber agar dicatat oleh LoggerMiddleware
+		return err
 	}
 
 	return response.Created(c, "modul berhasil diupload, proses ringkasan sedang berjalan", result)
@@ -149,3 +150,22 @@ func (h *ModuleHandler) Delete(c *fiber.Ctx) error {
 
 	return response.OK(c, "modul berhasil dihapus", nil)
 }
+
+// POST /api/v1/modules/:id/retry-summarize
+func (h *ModuleHandler) RetrySummarize(c *fiber.Ctx) error {
+	userID := c.Locals("userID").(string)
+	moduleID := c.Params("id")
+
+	if err := h.moduleService.RetrySummarize(c.Context(), userID, moduleID); err != nil {
+		if errors.Is(err, service.ErrModuleNotFound) {
+			return response.NotFound(c, err.Error())
+		}
+		if errors.Is(err, service.ErrNotModuleOwner) {
+			return response.Unauthorized(c, err.Error())
+		}
+		return response.InternalError(c, "gagal memulai ulang proses summarize")
+	}
+
+	return response.OK(c, "proses summarize dimulai ulang", nil)
+}
+

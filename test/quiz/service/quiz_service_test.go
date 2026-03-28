@@ -94,6 +94,16 @@ func (m *MockModuleRepository) Delete(ctx context.Context, id string) error {
 	return args.Error(0)
 }
 
+func (m *MockModuleRepository) MarkSummarizeFailed(ctx context.Context, moduleID string) error {
+	args := m.Called(ctx, moduleID)
+	return args.Error(0)
+}
+
+func (m *MockModuleRepository) UpdateSummarizeStatus(ctx context.Context, moduleID string, isSummarized bool, summarizeFailed bool) error {
+	args := m.Called(ctx, moduleID, isSummarized, summarizeFailed)
+	return args.Error(0)
+}
+
 type MockQuizAI struct {
 	mock.Mock
 }
