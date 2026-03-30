@@ -26,6 +26,7 @@ func Created(c *fiber.Ctx, message string, data any) error {
 }
 
 func BadRequest(c *fiber.Ctx, err string) error {
+	c.Locals("responseError", err)
 	return c.Status(fiber.StatusBadRequest).JSON(APIResponse{
 		Success: false,
 		Error:   err,
@@ -33,6 +34,7 @@ func BadRequest(c *fiber.Ctx, err string) error {
 }
 
 func Unauthorized(c *fiber.Ctx, err string) error {
+	c.Locals("responseError", err)
 	return c.Status(fiber.StatusUnauthorized).JSON(APIResponse{
 		Success: false,
 		Error:   err,
@@ -40,6 +42,7 @@ func Unauthorized(c *fiber.Ctx, err string) error {
 }
 
 func NotFound(c *fiber.Ctx, err string) error {
+	c.Locals("responseError", err)
 	return c.Status(fiber.StatusNotFound).JSON(APIResponse{
 		Success: false,
 		Error:   err,
@@ -47,6 +50,7 @@ func NotFound(c *fiber.Ctx, err string) error {
 }
 
 func InternalError(c *fiber.Ctx, err string) error {
+	c.Locals("responseError", err)
 	return c.Status(fiber.StatusInternalServerError).JSON(APIResponse{
 		Success: false,
 		Error:   err,

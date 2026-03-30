@@ -19,7 +19,7 @@ func ConnectDatabase() {
 		cfg.Host, cfg.Port, cfg.User, cfg.Password, cfg.Name, cfg.SSLMode,
 	)
 
-	// Set log level GORM: Silent di production, Info di development
+	// Set log level GORM: Silent at production, Info at development
 	logLevel := logger.Silent
 	if Cfg.App.Env == "development" {
 		logLevel = logger.Info

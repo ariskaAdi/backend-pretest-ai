@@ -54,6 +54,70 @@ func (m *MockQuizRepository) SaveAnswersAndScore(ctx context.Context, quizID str
 	return args.Error(0)
 }
 
+func (m *MockQuizRepository) UpdateStatus(ctx context.Context, quizID string, status domain.QuizStatus) error {
+	args := m.Called(ctx, quizID, status)
+	return args.Error(0)
+}
+
+type MockUserRepository struct {
+	mock.Mock
+}
+
+func (m *MockUserRepository) Create(ctx context.Context, user *domain.User) error {
+	args := m.Called(ctx, user)
+	return args.Error(0)
+}
+func (m *MockUserRepository) FindByEmail(ctx context.Context, email string) (*domain.User, error) {
+	args := m.Called(ctx, email)
+	if args.Get(0) != nil {
+		return args.Get(0).(*domain.User), args.Error(1)
+	}
+	return nil, args.Error(1)
+}
+func (m *MockUserRepository) FindByID(ctx context.Context, id string) (*domain.User, error) {
+	args := m.Called(ctx, id)
+	if args.Get(0) != nil {
+		return args.Get(0).(*domain.User), args.Error(1)
+	}
+	return nil, args.Error(1)
+}
+func (m *MockUserRepository) UpdateOTP(ctx context.Context, userID string, otp string) error {
+	args := m.Called(ctx, userID, otp)
+	return args.Error(0)
+}
+func (m *MockUserRepository) VerifyUser(ctx context.Context, userID string) error {
+	args := m.Called(ctx, userID)
+	return args.Error(0)
+}
+func (m *MockUserRepository) UpdateEmail(ctx context.Context, userID string, newEmail string) error {
+	args := m.Called(ctx, userID, newEmail)
+	return args.Error(0)
+}
+func (m *MockUserRepository) UpdateQuotaAndRole(ctx context.Context, email string, quizQuota int, summarizeQuota int) error {
+	args := m.Called(ctx, email, quizQuota, summarizeQuota)
+	return args.Error(0)
+}
+func (m *MockUserRepository) UpdateRole(ctx context.Context, email string, role domain.Role) error {
+	args := m.Called(ctx, email, role)
+	return args.Error(0)
+}
+func (m *MockUserRepository) DeductQuizQuota(ctx context.Context, userID string) error {
+	args := m.Called(ctx, userID)
+	return args.Error(0)
+}
+func (m *MockUserRepository) DeductSummarizeQuota(ctx context.Context, userID string) error {
+	args := m.Called(ctx, userID)
+	return args.Error(0)
+}
+func (m *MockUserRepository) RestoreQuizQuota(ctx context.Context, userID string) error {
+	args := m.Called(ctx, userID)
+	return args.Error(0)
+}
+func (m *MockUserRepository) RestoreSummarizeQuota(ctx context.Context, userID string) error {
+	args := m.Called(ctx, userID)
+	return args.Error(0)
+}
+
 type MockModuleRepository struct {
 	mock.Mock
 }
@@ -121,9 +185,17 @@ func (m *MockQuizAI) GenerateQuiz(summary string, numQuestions int) (*pkgai.Gene
 func setupQuizServiceTest(t *testing.T) (service.QuizServiceContract, *MockQuizRepository, *MockModuleRepository, *MockQuizAI) {
 	mockQuizRepo := new(MockQuizRepository)
 	mockModuleRepo := new(MockModuleRepository)
+	mockUserRepo := new(MockUserRepository)
 	mockAI := new(MockQuizAI)
 
-	srv := service.NewQuizService(mockQuizRepo, mockModuleRepo, mockAI)
+	// Default: user ada, role guest, quota cukup
+	mockUserRepo.On("FindByID", mock.Anything, mock.Anything).Return(
+		&domain.User{ID: "user-1", Role: domain.RoleGuest, QuizQuota: 5}, nil,
+	).Maybe()
+	mockUserRepo.On("DeductQuizQuota", mock.Anything, mock.Anything).Return(nil).Maybe()
+	mockUserRepo.On("RestoreQuizQuota", mock.Anything, mock.Anything).Return(nil).Maybe()
+
+	srv := service.NewQuizService(mockQuizRepo, mockModuleRepo, mockUserRepo, mockAI)
 	return srv, mockQuizRepo, mockModuleRepo, mockAI
 }
 
@@ -279,6 +351,17 @@ func TestQuizService_Submit(t *testing.T) {
 	t.Run("Quiz sudah completed", func(t *testing.T) {
 		srv, mockQuizRepo, _, _ := setupQuizServiceTest(t)
 		mockQuizRepo.On("FindByID", mock.Anything, "q-1").Return(&domain.Quiz{UserID: "user-1", Status: domain.QuizStatusCompleted}, nil)
+
+		resp, err := srv.Submit(context.Background(), "user-1", "q-1", dto.SubmitAnswerRequest{})
+
+		assert.Error(t, err)
+		assert.Equal(t, service.ErrQuizAlreadyDone, err)
+		assert.Nil(t, resp)
+	})
+
+	t.Run("Quiz sudah cancelled", func(t *testing.T) {
+		srv, mockQuizRepo, _, _ := setupQuizServiceTest(t)
+		mockQuizRepo.On("FindByID", mock.Anything, "q-1").Return(&domain.Quiz{UserID: "user-1", Status: domain.QuizStatusCancelled}, nil)
 
 		resp, err := srv.Submit(context.Background(), "user-1", "q-1", dto.SubmitAnswerRequest{})
 

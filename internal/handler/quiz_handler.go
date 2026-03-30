@@ -46,6 +46,9 @@ func (h *QuizHandler) Generate(c *fiber.Ctx) error {
 		if errors.Is(err, service.ErrModuleNotSummarized) {
 			return response.BadRequest(c, err.Error())
 		}
+		if errors.Is(err, service.ErrInsufficientQuizQuota) {
+			return response.BadRequest(c, err.Error())
+		}
 		return response.InternalError(c, "gagal generate quiz")
 	}
 
@@ -126,6 +129,28 @@ func (h *QuizHandler) GetResult(c *fiber.Ctx) error {
 	}
 
 	return response.OK(c, "berhasil", result)
+}
+
+// DELETE /api/v1/quiz/:id
+func (h *QuizHandler) Cancel(c *fiber.Ctx) error {
+	userID := c.Locals("userID").(string)
+	quizID := c.Params("id")
+
+	err := h.quizService.Cancel(c.Context(), userID, quizID)
+	if err != nil {
+		if errors.Is(err, service.ErrQuizNotFound) {
+			return response.NotFound(c, err.Error())
+		}
+		if errors.Is(err, service.ErrNotQuizOwner) {
+			return response.Unauthorized(c, err.Error())
+		}
+		if errors.Is(err, service.ErrQuizCannotBeCancelled) {
+			return response.BadRequest(c, err.Error())
+		}
+		return response.InternalError(c, "gagal membatalkan quiz")
+	}
+
+	return response.OK(c, "quiz berhasil dibatalkan dan kuota dikembalikan", nil)
 }
 
 // POST /api/v1/quiz/:id/retry

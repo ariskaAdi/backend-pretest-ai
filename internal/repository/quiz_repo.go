@@ -16,6 +16,7 @@ type QuizRepositoryContract interface {
 	FindByUserID(ctx context.Context, userID string) ([]domain.Quiz, error)
 	FindByUserIDAndModuleID(ctx context.Context, userID string, moduleID string) ([]domain.Quiz, error)
 	SaveAnswersAndScore(ctx context.Context, quizID string, questions []domain.Question, score int) error
+	UpdateStatus(ctx context.Context, quizID string, status domain.QuizStatus) error
 }
 
 type QuizRepository struct {
@@ -61,6 +62,13 @@ func (r *QuizRepository) FindByUserIDAndModuleID(ctx context.Context, userID str
 		Order("created_at DESC").
 		Find(&quizzes).Error
 	return quizzes, err
+}
+
+func (r *QuizRepository) UpdateStatus(ctx context.Context, quizID string, status domain.QuizStatus) error {
+	return r.db.WithContext(ctx).
+		Model(&domain.Quiz{}).
+		Where("id = ?", quizID).
+		Update("status", status).Error
 }
 
 func (r *QuizRepository) SaveAnswersAndScore(ctx context.Context, quizID string, questions []domain.Question, score int) error {

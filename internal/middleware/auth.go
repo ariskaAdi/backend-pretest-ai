@@ -12,13 +12,13 @@ func Auth() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		authHeader := c.Get("Authorization")
 		if len(authHeader) < 8 || authHeader[:7] != "Bearer " {
-			return response.Unauthorized(c, "token tidak ditemukan")
+			return response.Unauthorized(c, "missing authorization token")
 		}
 
 		tokenStr := authHeader[7:]
 		claims, err := jwtpkg.Parse(tokenStr)
 		if err != nil {
-			return response.Unauthorized(c, "token tidak valid atau sudah expired")
+			return response.Unauthorized(c, "invalid or expired token")
 		}
 
 		// Simpan claims ke locals agar bisa diakses handler
@@ -34,7 +34,7 @@ func RequireRole(roles ...string) fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		role, ok := c.Locals("role").(string)
 		if !ok {
-			return response.Unauthorized(c, "role tidak ditemukan")
+			return response.Unauthorized(c, "role not found")
 		}
 
 		for _, r := range roles {
@@ -45,7 +45,7 @@ func RequireRole(roles ...string) fiber.Handler {
 
 		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
 			"success": false,
-			"error":   "akses ditolak: role tidak memiliki izin",
+			"error":   "access denied: insufficient role",
 		})
 	}
 }

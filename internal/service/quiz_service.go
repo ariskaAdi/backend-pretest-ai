@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"time"
 
 	"backend-pretest-ai/internal/domain"
@@ -14,12 +15,14 @@ import (
 )
 
 var (
-	ErrQuizNotFound        = errors.New("quiz tidak ditemukan")
-	ErrNotQuizOwner        = errors.New("kamu tidak memiliki akses ke quiz ini")
-	ErrModuleNotSummarized = errors.New("modul belum selesai diproses, coba beberapa saat lagi")
-	ErrQuizAlreadyDone     = errors.New("quiz ini sudah dikerjakan")
-	ErrAnswerCountMismatch = errors.New("jumlah jawaban tidak sesuai dengan jumlah soal")
-	ErrInvalidQuestionID   = errors.New("terdapat question_id yang tidak valid")
+	ErrQuizNotFound           = errors.New("quiz tidak ditemukan")
+	ErrNotQuizOwner           = errors.New("kamu tidak memiliki akses ke quiz ini")
+	ErrModuleNotSummarized    = errors.New("modul belum selesai diproses, coba beberapa saat lagi")
+	ErrQuizAlreadyDone        = errors.New("quiz ini sudah dikerjakan")
+	ErrAnswerCountMismatch    = errors.New("jumlah jawaban tidak sesuai dengan jumlah soal")
+	ErrInvalidQuestionID      = errors.New("terdapat question_id yang tidak valid")
+	ErrInsufficientQuizQuota  = errors.New("kuota quiz habis, silakan beli paket terlebih dahulu")
+	ErrQuizCannotBeCancelled  = errors.New("hanya quiz yang belum dikerjakan yang dapat dibatalkan")
 )
 
 type QuizServiceContract interface {
@@ -29,6 +32,7 @@ type QuizServiceContract interface {
 	GetHistoryByModule(ctx context.Context, userID string, moduleID string) ([]dto.QuizHistoryResponse, error)
 	GetResult(ctx context.Context, userID string, quizID string) (*dto.QuizResultResponse, error)
 	Retry(ctx context.Context, userID string, quizID string) (*dto.QuizResponse, error)
+	Cancel(ctx context.Context, userID string, quizID string) error
 }
 
 type QuizAI interface {
@@ -38,19 +42,52 @@ type QuizAI interface {
 type QuizService struct {
 	quizRepo   repository.QuizRepositoryContract
 	moduleRepo repository.ModuleRepositoryContract
+	userRepo   repository.UserRepository
 	aiClient   QuizAI
 }
 
-func NewQuizService(quizRepo repository.QuizRepositoryContract, moduleRepo repository.ModuleRepositoryContract, aiClient QuizAI) *QuizService {
+func NewQuizService(quizRepo repository.QuizRepositoryContract, moduleRepo repository.ModuleRepositoryContract, userRepo repository.UserRepository, aiClient QuizAI) *QuizService {
 	return &QuizService{
 		quizRepo:   quizRepo,
 		moduleRepo: moduleRepo,
+		userRepo:   userRepo,
 		aiClient:   aiClient,
 	}
 }
 
 // Generate — buat quiz baru dari summary modul via Genkit
 func (s *QuizService) Generate(ctx context.Context, userID string, req dto.GenerateQuizRequest) (*dto.QuizResponse, error) {
+	// Cek role user — admin bypass quota
+	user, err := s.userRepo.FindByID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if user == nil {
+		return nil, ErrUserNotFound
+	}
+
+	// Deduct quiz quota (skip untuk admin)
+	quotaDeducted := false
+	if user.Role != domain.RoleAdmin {
+		if err := s.userRepo.DeductQuizQuota(ctx, userID); err != nil {
+			if errors.Is(err, repository.ErrQuotaInsufficient) {
+				return nil, ErrInsufficientQuizQuota
+			}
+			return nil, err
+		}
+		quotaDeducted = true
+	}
+
+	// Jika ada error setelah quota dikurangi, kembalikan quota
+	var quizCreated bool
+	defer func() {
+		if quotaDeducted && !quizCreated {
+			if restoreErr := s.userRepo.RestoreQuizQuota(context.Background(), userID); restoreErr != nil {
+				log.Printf("[quiz_service] gagal restore quiz quota untuk user %s: %v", userID, restoreErr)
+			}
+		}
+	}()
+
 	// Ambil modul, validasi ownership
 	module, err := s.moduleRepo.FindByID(ctx, req.ModuleID)
 	if err != nil {
@@ -100,6 +137,7 @@ func (s *QuizService) Generate(ctx context.Context, userID string, req dto.Gener
 		return nil, fmt.Errorf("gagal menyimpan quiz: %w", err)
 	}
 
+	quizCreated = true
 	return toQuizResponse(quiz, module.Title), nil
 }
 
@@ -115,7 +153,7 @@ func (s *QuizService) Submit(ctx context.Context, userID string, quizID string, 
 	if quiz.UserID != userID {
 		return nil, ErrNotQuizOwner
 	}
-	if quiz.Status == domain.QuizStatusCompleted {
+	if quiz.Status != domain.QuizStatusPending {
 		return nil, ErrQuizAlreadyDone
 	}
 	if len(req.Answers) != len(quiz.Questions) {
@@ -205,6 +243,41 @@ func (s *QuizService) Retry(ctx context.Context, userID string, quizID string) (
 		ModuleID:     oldQuiz.ModuleID,
 		NumQuestions: oldQuiz.NumQuestions,
 	})
+}
+
+// Cancel — batalkan quiz pending dan kembalikan quiz quota ke user
+func (s *QuizService) Cancel(ctx context.Context, userID string, quizID string) error {
+	quiz, err := s.quizRepo.FindByID(ctx, quizID)
+	if err != nil {
+		return err
+	}
+	if quiz == nil {
+		return ErrQuizNotFound
+	}
+	if quiz.UserID != userID {
+		return ErrNotQuizOwner
+	}
+	if quiz.Status != domain.QuizStatusPending {
+		return ErrQuizCannotBeCancelled
+	}
+
+	if err := s.quizRepo.UpdateStatus(ctx, quizID, domain.QuizStatusCancelled); err != nil {
+		return fmt.Errorf("gagal membatalkan quiz: %w", err)
+	}
+
+	// Kembalikan quota (skip untuk admin)
+	user, err := s.userRepo.FindByID(ctx, userID)
+	if err != nil {
+		log.Printf("[quiz_service] gagal ambil user saat restore quota, quiz %s: %v", quizID, err)
+		return nil
+	}
+	if user != nil && user.Role != domain.RoleAdmin {
+		if restoreErr := s.userRepo.RestoreQuizQuota(ctx, userID); restoreErr != nil {
+			log.Printf("[quiz_service] gagal restore quiz quota untuk user %s: %v", userID, restoreErr)
+		}
+	}
+
+	return nil
 }
 
 // --- Mapper helpers ---

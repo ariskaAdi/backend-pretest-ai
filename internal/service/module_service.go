@@ -18,11 +18,12 @@ import (
 )
 
 var (
-	ErrModuleNotFound     = errors.New("modul tidak ditemukan")
-	ErrNotModuleOwner     = errors.New("kamu tidak memiliki akses ke modul ini")
-	ErrInvalidFileType    = errors.New("file harus berformat PDF")
-	ErrFileTooLarge       = errors.New("ukuran file maksimal 20MB")
-	ErrPDFNoText          = errors.New("PDF tidak mengandung teks yang bisa diekstrak")
+	ErrModuleNotFound              = errors.New("module not found")
+	ErrNotModuleOwner              = errors.New("you do not have access to this module")
+	ErrInvalidFileType             = errors.New("file must be in PDF format")
+	ErrFileTooLarge                = errors.New("maximum file size is 20MB")
+	ErrPDFNoText                   = errors.New("PDF does not contain extractable text")
+	ErrInsufficientSummarizeQuota  = errors.New("kuota ringkas habis, silakan beli paket terlebih dahulu")
 )
 
 const maxFileSizeBytes = 20 * 1024 * 1024 // 20MB
@@ -45,13 +46,15 @@ type AISummarizer interface {
 
 type ModuleService struct {
 	moduleRepo repository.ModuleRepositoryContract
+	userRepo   repository.UserRepository
 	r2Client   R2Uploader
 	aiClient   AISummarizer
 }
 
-func NewModuleService(moduleRepo repository.ModuleRepositoryContract, r2Client R2Uploader, aiClient AISummarizer) ModuleServiceContract {
+func NewModuleService(moduleRepo repository.ModuleRepositoryContract, userRepo repository.UserRepository, r2Client R2Uploader, aiClient AISummarizer) ModuleServiceContract {
 	return &ModuleService{
 		moduleRepo: moduleRepo,
+		userRepo:   userRepo,
 		r2Client:   r2Client,
 		aiClient:   aiClient,
 	}
@@ -59,6 +62,37 @@ func NewModuleService(moduleRepo repository.ModuleRepositoryContract, r2Client R
 
 // Upload — terima PDF, upload ke R2, extract text, simpan ke DB, trigger summarize async
 func (s *ModuleService) Upload(ctx context.Context, userID string, fileHeader *multipart.FileHeader, req dto.UploadModuleRequest) (*dto.ModuleResponse, error) {
+	// Cek role user — admin bypass quota
+	user, err := s.userRepo.FindByID(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	if user == nil {
+		return nil, ErrModuleNotFound
+	}
+
+	// Deduct summarize quota (skip untuk admin)
+	quotaDeducted := false
+	if user.Role != domain.RoleAdmin {
+		if err := s.userRepo.DeductSummarizeQuota(ctx, userID); err != nil {
+			if errors.Is(err, repository.ErrQuotaInsufficient) {
+				return nil, ErrInsufficientSummarizeQuota
+			}
+			return nil, err
+		}
+		quotaDeducted = true
+	}
+
+	// Jika ada error setelah quota dikurangi, kembalikan quota
+	var moduleCreated bool
+	defer func() {
+		if quotaDeducted && !moduleCreated {
+			if restoreErr := s.userRepo.RestoreSummarizeQuota(context.Background(), userID); restoreErr != nil {
+				log.Printf("[module_service] gagal restore summarize quota untuk user %s: %v", userID, restoreErr)
+			}
+		}
+	}()
+
 	// Validasi tipe file
 	if filepath.Ext(fileHeader.Filename) != ".pdf" {
 		return nil, ErrInvalidFileType
@@ -72,7 +106,7 @@ func (s *ModuleService) Upload(ctx context.Context, userID string, fileHeader *m
 	// Buka file
 	file, err := fileHeader.Open()
 	if err != nil {
-		return nil, fmt.Errorf("gagal membuka file: %w", err)
+		return nil, fmt.Errorf("failed to open file: %w", err)
 	}
 	defer file.Close()
 
@@ -80,13 +114,13 @@ func (s *ModuleService) Upload(ctx context.Context, userID string, fileHeader *m
 	tmpPath := filepath.Join(os.TempDir(), fmt.Sprintf("%d_%s", time.Now().UnixNano(), filepath.Base(fileHeader.Filename)))
 	tmpFile, err := os.Create(tmpPath)
 	if err != nil {
-		return nil, fmt.Errorf("gagal membuat file sementara: %w", err)
+		return nil, fmt.Errorf("failed to create temporary file: %w", err)
 	}
 	defer os.Remove(tmpPath)
 
 	if _, err := tmpFile.ReadFrom(file); err != nil {
 		tmpFile.Close()
-		return nil, fmt.Errorf("gagal menulis file sementara: %w", err)
+		return nil, fmt.Errorf("failed to write temporary file: %w", err)
 	}
 	tmpFile.Close()
 
@@ -98,14 +132,14 @@ func (s *ModuleService) Upload(ctx context.Context, userID string, fileHeader *m
 
 	// Reset reader ke awal sebelum upload ke R2
 	if _, err := file.Seek(0, 0); err != nil {
-		return nil, fmt.Errorf("gagal reset file reader: %w", err)
+		return nil, fmt.Errorf("failed to reset file reader: %w", err)
 	}
 
 	// Upload ke Cloudflare R2
 	filename := fmt.Sprintf("modules/%s_%s", userID[:8], filepath.Base(fileHeader.Filename))
 	fileURL, err := s.r2Client.UploadFile(ctx, file, filename, "application/pdf")
 	if err != nil {
-		return nil, fmt.Errorf("gagal upload file: %w", err)
+		return nil, fmt.Errorf("failed to upload file: %w", err)
 	}
 
 	// Simpan ke database
@@ -117,26 +151,26 @@ func (s *ModuleService) Upload(ctx context.Context, userID string, fileHeader *m
 		IsSummarized: false,
 	}
 	if err := s.moduleRepo.Create(ctx, module); err != nil {
-		return nil, fmt.Errorf("gagal menyimpan modul: %w", err)
+		return nil, fmt.Errorf("failed to save module: %w", err)
 	}
 
-	// Trigger summarize ke Genkit — async, tidak block response
 	go func() {
 		result, err := s.aiClient.Summarize(rawText)
 		if err != nil {
-			log.Printf("[module_service] gagal summarize modul %s: %v", module.ID, err)
+			log.Printf("[module_service] failed to summarize module %s: %v", module.ID, err)
 			// Simpan status gagal ke DB agar frontend bisa mendeteksi
 			if dbErr := s.moduleRepo.MarkSummarizeFailed(context.Background(), module.ID); dbErr != nil {
-				log.Printf("[module_service] gagal update status failed modul %s: %v", module.ID, dbErr)
+				log.Printf("[module_service] failed to update status to failed for module %s: %v", module.ID, dbErr)
 			}
 			return
 		}
 		if err := s.moduleRepo.UpdateSummary(context.Background(), module.ID, result.Summary); err != nil {
-			log.Printf("[module_service] gagal simpan summary modul %s: %v", module.ID, err)
+			log.Printf("[module_service] failed to save summary for module %s: %v", module.ID, err)
 		}
-		log.Printf("[module_service] summary modul %s selesai", module.ID)
+		log.Printf("[module_service] summary for module %s completed", module.ID)
 	}()
 
+	moduleCreated = true
 	return &dto.ModuleResponse{
 		ID:              module.ID,
 		Title:           module.Title,
@@ -224,20 +258,20 @@ func (s *ModuleService) RetrySummarize(ctx context.Context, userID string, modul
 
 	// Reset status gagal sebelum coba lagi
 	if err := s.moduleRepo.UpdateSummarizeStatus(ctx, moduleID, false, false); err != nil {
-		return fmt.Errorf("gagal reset status summarize: %w", err)
+		return fmt.Errorf("failed to reset summarize status: %w", err)
 	}
 
 	go func() {
 		result, err := s.aiClient.Summarize(module.RawText)
 		if err != nil {
-			log.Printf("[module_service] retry summarize gagal modul %s: %v", moduleID, err)
+			log.Printf("[module_service] retry summarize failed for module %s: %v", moduleID, err)
 			if dbErr := s.moduleRepo.MarkSummarizeFailed(context.Background(), moduleID); dbErr != nil {
-				log.Printf("[module_service] gagal update status failed modul %s: %v", moduleID, dbErr)
+				log.Printf("[module_service] failed to update status to failed for module %s: %v", moduleID, dbErr)
 			}
 			return
 		}
 		if err := s.moduleRepo.UpdateSummary(context.Background(), moduleID, result.Summary); err != nil {
-			log.Printf("[module_service] gagal simpan summary retry modul %s: %v", moduleID, err)
+			log.Printf("[module_service] failed to save retry summary for module %s: %v", moduleID, err)
 		}
 	}()
 

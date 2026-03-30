@@ -38,7 +38,7 @@ func NewUserHandler(userService service.UserService) *UserHandler {
 func (h *UserHandler) Register(c *fiber.Ctx) error {
 	var req dto.RegisterRequest
 	if err := c.BodyParser(&req); err != nil {
-		return response.BadRequest(c, "format request tidak valid")
+		return response.BadRequest(c, "invalid request format")
 	}
 	if err := h.validate.Struct(req); err != nil {
 		return response.BadRequest(c, formatValidationError(err))
@@ -48,10 +48,10 @@ func (h *UserHandler) Register(c *fiber.Ctx) error {
 		if errors.Is(err, service.ErrEmailAlreadyExists) {
 			return response.BadRequest(c, err.Error())
 		}
-		return response.InternalError(c, "gagal melakukan registrasi")
+		return response.InternalError(c, "registration failed")
 	}
 
-	return response.Created(c, "registrasi berhasil, cek email kamu untuk verifikasi OTP", nil)
+	return response.Created(c, "registration successful, check your email for OTP verification", nil)
 }
 
 // POST /api/v1/auth/verify-otp
@@ -70,7 +70,7 @@ func (h *UserHandler) Register(c *fiber.Ctx) error {
 func (h *UserHandler) VerifyOTP(c *fiber.Ctx) error {
 	var req dto.VerifyOTPRequest
 	if err := c.BodyParser(&req); err != nil {
-		return response.BadRequest(c, "format request tidak valid")
+		return response.BadRequest(c, "invalid request format")
 	}
 	if err := h.validate.Struct(req); err != nil {
 		return response.BadRequest(c, formatValidationError(err))
@@ -83,10 +83,10 @@ func (h *UserHandler) VerifyOTP(c *fiber.Ctx) error {
 		if errors.Is(err, service.ErrInvalidOTP) {
 			return response.BadRequest(c, err.Error())
 		}
-		return response.InternalError(c, "gagal verifikasi OTP")
+		return response.InternalError(c, "OTP verification failed")
 	}
 
-	return response.OK(c, "email berhasil diverifikasi, silakan login", nil)
+	return response.OK(c, "email verified successfully, you can now log in", nil)
 }
 
 // POST /api/v1/auth/login
@@ -105,7 +105,7 @@ func (h *UserHandler) VerifyOTP(c *fiber.Ctx) error {
 func (h *UserHandler) Login(c *fiber.Ctx) error {
 	var req dto.LoginRequest
 	if err := c.BodyParser(&req); err != nil {
-		return response.BadRequest(c, "format request tidak valid")
+		return response.BadRequest(c, "invalid request format")
 	}
 	if err := h.validate.Struct(req); err != nil {
 		return response.BadRequest(c, formatValidationError(err))
@@ -119,17 +119,17 @@ func (h *UserHandler) Login(c *fiber.Ctx) error {
 		if errors.Is(err, service.ErrEmailNotVerified) {
 			return response.Unauthorized(c, err.Error())
 		}
-		return response.InternalError(c, "gagal login")
+		return response.InternalError(c, "login failed")
 	}
 
-	return response.OK(c, "login berhasil", result)
+	return response.OK(c, "login successful", result)
 }
 
 // POST /api/v1/auth/logout
 // Stateless JWT — logout cukup di client dengan hapus token
 // Kalau nanti butuh blacklist, bisa tambah redis di sini
 func (h *UserHandler) Logout(c *fiber.Ctx) error {
-	return response.OK(c, "logout berhasil", nil)
+	return response.OK(c, "logout successful", nil)
 }
 
 // GET /api/v1/user/me
@@ -153,10 +153,10 @@ func (h *UserHandler) GetMe(c *fiber.Ctx) error {
 		if errors.Is(err, service.ErrUserNotFound) {
 			return response.NotFound(c, err.Error())
 		}
-		return response.InternalError(c, "gagal mengambil data user")
+		return response.InternalError(c, "failed to retrieve user data")
 	}
 
-	return response.OK(c, "berhasil", user)
+	return response.OK(c, "success", user)
 }
 
 // POST /api/v1/auth/resend-otp
@@ -175,7 +175,7 @@ func (h *UserHandler) GetMe(c *fiber.Ctx) error {
 func (h *UserHandler) ResendOTP(c *fiber.Ctx) error {
 	var req dto.ResendOTPRequest
 	if err := c.BodyParser(&req); err != nil {
-		return response.BadRequest(c, "format request tidak valid")
+		return response.BadRequest(c, "invalid request format")
 	}
 	if err := h.validate.Struct(req); err != nil {
 		return response.BadRequest(c, formatValidationError(err))
@@ -188,10 +188,10 @@ func (h *UserHandler) ResendOTP(c *fiber.Ctx) error {
 		if errors.Is(err, service.ErrAlreadyVerified) {
 			return response.BadRequest(c, err.Error())
 		}
-		return response.InternalError(c, "gagal mengirim ulang OTP")
+		return response.InternalError(c, "failed to resend OTP")
 	}
 
-	return response.OK(c, "OTP baru telah dikirim ke email kamu", nil)
+	return response.OK(c, "new OTP sent to your email", nil)
 }
 
 // POST /api/v1/user/email/request-update
@@ -213,7 +213,7 @@ func (h *UserHandler) RequestUpdateEmail(c *fiber.Ctx) error {
 
 	var req dto.UpdateEmailRequest
 	if err := c.BodyParser(&req); err != nil {
-		return response.BadRequest(c, "format request tidak valid")
+		return response.BadRequest(c, "invalid request format")
 	}
 	if err := h.validate.Struct(req); err != nil {
 		return response.BadRequest(c, formatValidationError(err))
@@ -226,10 +226,10 @@ func (h *UserHandler) RequestUpdateEmail(c *fiber.Ctx) error {
 		if errors.Is(err, service.ErrUserNotFound) {
 			return response.NotFound(c, err.Error())
 		}
-		return response.InternalError(c, "gagal request update email")
+		return response.InternalError(c, "failed to request email update")
 	}
 
-	return response.OK(c, "OTP telah dikirim ke email baru kamu", nil)
+	return response.OK(c, "OTP sent to your new email", nil)
 }
 
 // POST /api/v1/user/email/verify-update
@@ -251,7 +251,7 @@ func (h *UserHandler) VerifyUpdateEmail(c *fiber.Ctx) error {
 
 	var req dto.VerifyUpdateEmailRequest
 	if err := c.BodyParser(&req); err != nil {
-		return response.BadRequest(c, "format request tidak valid")
+		return response.BadRequest(c, "invalid request format")
 	}
 	if err := h.validate.Struct(req); err != nil {
 		return response.BadRequest(c, formatValidationError(err))
@@ -264,10 +264,10 @@ func (h *UserHandler) VerifyUpdateEmail(c *fiber.Ctx) error {
 		if errors.Is(err, service.ErrUserNotFound) {
 			return response.NotFound(c, err.Error())
 		}
-		return response.InternalError(c, "gagal update email")
+		return response.InternalError(c, "failed to update email")
 	}
 
-	return response.OK(c, "email berhasil diperbarui", nil)
+	return response.OK(c, "email updated successfully", nil)
 }
 
 // formatValidationError — ambil pesan error pertama dari validator
@@ -277,16 +277,18 @@ func formatValidationError(err error) string {
 		field := ve[0]
 		switch field.Tag() {
 		case "required":
-			return field.Field() + " wajib diisi"
+			return field.Field() + " is required"
 		case "email":
-			return field.Field() + " format email tidak valid"
+			return field.Field() + " must be a valid email"
 		case "min":
-			return field.Field() + " minimal " + field.Param() + " karakter"
+			return field.Field() + " must be at least " + field.Param() + " characters"
 		case "max":
-			return field.Field() + " maksimal " + field.Param() + " karakter"
+			return field.Field() + " must be at most " + field.Param() + " characters"
 		case "len":
-			return field.Field() + " harus " + field.Param() + " karakter"
+			return field.Field() + " must be exactly " + field.Param() + " characters"
+		default:
+			return field.Field() + " is invalid"
 		}
 	}
-	return "validasi gagal"
+	return "validation failed"
 }

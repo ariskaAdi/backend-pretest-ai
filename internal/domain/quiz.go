@@ -7,6 +7,7 @@ type QuizStatus string
 const (
 	QuizStatusPending   QuizStatus = "pending"
 	QuizStatusCompleted QuizStatus = "completed"
+	QuizStatusCancelled QuizStatus = "cancelled"
 )
 
 type Quiz struct {

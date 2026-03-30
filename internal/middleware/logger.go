@@ -59,6 +59,10 @@ func LoggerMiddleware() fiber.Handler {
 			"ip":       c.IP(),
 		}
 
+		if errMsg, ok := c.Locals("responseError").(string); ok && errMsg != "" {
+			fields["error"] = errMsg
+		}
+
 		// Log kalau status 4xx atau 5xx
 		if status >= 500 {
 			Logger.WithFields(fields).WithError(err).Error("server error")

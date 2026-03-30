@@ -38,7 +38,8 @@ func main() {
 
 	// 6. Setup Fiber app
 	app := fiber.New(fiber.Config{
-		AppName: "Backend Pretest AI API",
+		AppName:   "Backend Pretest AI API",
+		BodyLimit: 25 * 1024 * 1024, // 25MB — sesuai max upload PDF 20MB + overhead
 		// Matikan error handler default agar semua error lewat response helper
 		ErrorHandler: func(c *fiber.Ctx, err error) error {
 			// Log internal error

@@ -18,14 +18,14 @@ import (
 )
 
 var (
-	ErrEmailAlreadyExists   = errors.New("email sudah terdaftar")
-	ErrUserNotFound         = errors.New("user tidak ditemukan")
-	ErrInvalidOTP           = errors.New("OTP tidak valid")
-	ErrEmailNotVerified     = errors.New("email belum diverifikasi, cek inbox kamu")
-	ErrInvalidCredentials   = errors.New("email atau password salah")
-	ErrEmailSameAsCurrent   = errors.New("email baru tidak boleh sama dengan email lama")
-	ErrNewEmailAlreadyInUse = errors.New("email baru sudah digunakan akun lain")
-	ErrAlreadyVerified      = errors.New("email sudah terverifikasi")
+	ErrEmailAlreadyExists   = errors.New("email already registered")
+	ErrUserNotFound         = errors.New("user not found")
+	ErrInvalidOTP           = errors.New("invalid OTP")
+	ErrEmailNotVerified     = errors.New("email not verified, please check your inbox")
+	ErrInvalidCredentials   = errors.New("invalid email or password")
+	ErrEmailSameAsCurrent   = errors.New("new email must be different from current email")
+	ErrNewEmailAlreadyInUse = errors.New("new email is already in use")
+	ErrAlreadyVerified      = errors.New("email is already verified")
 )
 
 type UserService interface {
@@ -60,13 +60,13 @@ func (s *userService) Register(ctx context.Context, req dto.RegisterRequest) err
 	// Hash password
 	hashed, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
 	if err != nil {
-		return fmt.Errorf("gagal hash password: %w", err)
+		return fmt.Errorf("failed to hash password: %w", err)
 	}
 
 	// Generate OTP
 	otp, err := generateOTP()
 	if err != nil {
-		return fmt.Errorf("gagal generate OTP: %w", err)
+		return fmt.Errorf("failed to generate OTP: %w", err)
 	}
 
 	user := &domain.User{
@@ -79,7 +79,7 @@ func (s *userService) Register(ctx context.Context, req dto.RegisterRequest) err
 	}
 
 	if err := s.userRepo.Create(ctx, user); err != nil {
-		return fmt.Errorf("gagal menyimpan user: %w", err)
+		return fmt.Errorf("failed to save user: %w", err)
 	}
 
 	// Kirim OTP lewat email — goroutine, tidak block response
@@ -132,7 +132,7 @@ func (s *userService) Login(ctx context.Context, req dto.LoginRequest) (*dto.Log
 	// Generate JWT
 	token, err := jwtpkg.Generate(user.ID, string(user.Role))
 	if err != nil {
-		return nil, fmt.Errorf("gagal generate token: %w", err)
+		return nil, fmt.Errorf("failed to generate token: %w", err)
 	}
 
 	return &dto.LoginResponse{
@@ -176,7 +176,7 @@ func (s *userService) RequestUpdateEmail(ctx context.Context, userID string, req
 	// Generate OTP baru
 	otp, err := generateOTP()
 	if err != nil {
-		return fmt.Errorf("gagal generate OTP: %w", err)
+		return fmt.Errorf("failed to generate OTP: %w", err)
 	}
 
 	// Simpan OTP ke user yang sedang login
@@ -256,7 +256,7 @@ func (s *userService) ResendOTP(ctx context.Context, req dto.ResendOTPRequest) e
 
 	otp, err := generateOTP()
 	if err != nil {
-		return fmt.Errorf("gagal generate OTP: %w", err)
+		return fmt.Errorf("failed to generate OTP: %w", err)
 	}
 
 	if err := s.userRepo.UpdateOTP(ctx, user.ID, otp); err != nil {

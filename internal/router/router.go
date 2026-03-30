@@ -37,14 +37,14 @@ func Setup(app *fiber.App) {
 	userHandler := handler.NewUserHandler(userSvc)
 
 	moduleRepo := repository.NewModuleRepository()
-	moduleSvc := service.NewModuleService(moduleRepo, storage.R2, ai.Client)
+	moduleSvc := service.NewModuleService(moduleRepo, userRepo, storage.R2, ai.Client)
 	moduleHandler := handler.NewModuleHandler(moduleSvc)
 
 	summarySvc := service.NewSummaryService(moduleRepo)
 	summaryHandler := handler.NewSummaryHandler(summarySvc)
 
 	quizRepo := repository.NewQuizRepository()
-	quizSvc := service.NewQuizService(quizRepo, moduleRepo, ai.Client)
+	quizSvc := service.NewQuizService(quizRepo, moduleRepo, userRepo, ai.Client)
 	quizHandler := handler.NewQuizHandler(quizSvc)
 
 	lynkRepo := repository.NewLynkRepository()
@@ -95,6 +95,7 @@ func Setup(app *fiber.App) {
 	// --- Quiz routes (protected) ---
 	quiz := api.Group("/quiz", middleware.Auth())
 	quiz.Post("/", quizHandler.Generate)
+	quiz.Delete("/:id", quizHandler.Cancel)
 	quiz.Post("/:id/submit", quizHandler.Submit)
 	quiz.Post("/:id/retry", quizHandler.Retry)
 	quiz.Get("/history", quizHandler.GetHistory)

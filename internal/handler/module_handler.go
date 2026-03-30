@@ -5,6 +5,7 @@ import (
 
 	"github.com/go-playground/validator/v10"
 	"github.com/gofiber/fiber/v2"
+	"github.com/google/uuid"
 
 	"backend-pretest-ai/internal/dto"
 	"backend-pretest-ai/internal/service"
@@ -43,7 +44,7 @@ func (h *ModuleHandler) Upload(c *fiber.Ctx) error {
 	// Parse form data
 	var req dto.UploadModuleRequest
 	if err := c.BodyParser(&req); err != nil {
-		return response.BadRequest(c, "format request tidak valid")
+		return response.BadRequest(c, "invalid request format")
 	}
 	if err := h.validate.Struct(req); err != nil {
 		return response.BadRequest(c, formatValidationError(err))
@@ -52,21 +53,22 @@ func (h *ModuleHandler) Upload(c *fiber.Ctx) error {
 	// Ambil file dari multipart
 	fileHeader, err := c.FormFile("file")
 	if err != nil {
-		return response.BadRequest(c, "file PDF wajib disertakan (field: file)")
+		return response.BadRequest(c, "PDF file is required (field: file)")
 	}
 
 	result, err := h.moduleService.Upload(c.Context(), userID, fileHeader, req)
 	if err != nil {
 		if errors.Is(err, service.ErrInvalidFileType) ||
 			errors.Is(err, service.ErrFileTooLarge) ||
-			errors.Is(err, service.ErrPDFNoText) {
+			errors.Is(err, service.ErrPDFNoText) ||
+			errors.Is(err, service.ErrInsufficientSummarizeQuota) {
 			return response.BadRequest(c, err.Error())
 		}
 		// Untuk error lain (500), kembalikan ke Fiber agar dicatat oleh LoggerMiddleware
 		return err
 	}
 
-	return response.Created(c, "modul berhasil diupload, proses ringkasan sedang berjalan", result)
+	return response.Created(c, "module uploaded successfully, summarization in progress", result)
 }
 
 // GET /api/v1/modules
@@ -84,10 +86,10 @@ func (h *ModuleHandler) GetAll(c *fiber.Ctx) error {
 
 	modules, err := h.moduleService.GetAll(c.Context(), userID)
 	if err != nil {
-		return response.InternalError(c, "gagal mengambil daftar modul")
+		return response.InternalError(c, "failed to retrieve module list")
 	}
 
-	return response.OK(c, "berhasil", modules)
+	return response.OK(c, "success", modules)
 }
 
 // GET /api/v1/modules/:id
@@ -107,6 +109,10 @@ func (h *ModuleHandler) GetByID(c *fiber.Ctx) error {
 	userID := c.Locals("userID").(string)
 	moduleID := c.Params("id")
 
+	if _, err := uuid.Parse(moduleID); err != nil {
+		return response.NotFound(c, "module not found")
+	}
+
 	module, err := h.moduleService.GetByID(c.Context(), userID, moduleID)
 	if err != nil {
 		if errors.Is(err, service.ErrModuleNotFound) {
@@ -115,10 +121,10 @@ func (h *ModuleHandler) GetByID(c *fiber.Ctx) error {
 		if errors.Is(err, service.ErrNotModuleOwner) {
 			return response.Unauthorized(c, err.Error())
 		}
-		return response.InternalError(c, "gagal mengambil modul")
+		return response.InternalError(c, "failed to retrieve module")
 	}
 
-	return response.OK(c, "berhasil", module)
+	return response.OK(c, "success", module)
 }
 
 // DELETE /api/v1/modules/:id
@@ -145,10 +151,10 @@ func (h *ModuleHandler) Delete(c *fiber.Ctx) error {
 		if errors.Is(err, service.ErrNotModuleOwner) {
 			return response.Unauthorized(c, err.Error())
 		}
-		return response.InternalError(c, "gagal menghapus modul")
+		return response.InternalError(c, "failed to delete module")
 	}
 
-	return response.OK(c, "modul berhasil dihapus", nil)
+	return response.OK(c, "module deleted successfully", nil)
 }
 
 // POST /api/v1/modules/:id/retry-summarize
@@ -163,9 +169,9 @@ func (h *ModuleHandler) RetrySummarize(c *fiber.Ctx) error {
 		if errors.Is(err, service.ErrNotModuleOwner) {
 			return response.Unauthorized(c, err.Error())
 		}
-		return response.InternalError(c, "gagal memulai ulang proses summarize")
+		return response.InternalError(c, "failed to restart summarization")
 	}
 
-	return response.OK(c, "proses summarize dimulai ulang", nil)
+	return response.OK(c, "summarization restarted successfully", nil)
 }
 
