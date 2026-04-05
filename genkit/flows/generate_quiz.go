@@ -28,7 +28,7 @@ func RegisterGenerateQuizFlow(g *genkit.Genkit) *core.Flow[*GenerateQuizInput, *
 	return genkit.DefineFlow(g, "generateQuiz",
 		func(ctx context.Context, input *GenerateQuizInput) (*GenerateQuizOutput, error) {
 			if input.Summary == "" {
-				return nil, fmt.Errorf("summary tidak boleh kosong")
+				return nil, fmt.Errorf("summary should not be empty")
 			}
 			if input.NumQuestions <= 0 {
 				return nil, fmt.Errorf("num_questions harus lebih dari 0")
@@ -36,13 +36,13 @@ func RegisterGenerateQuizFlow(g *genkit.Genkit) *core.Flow[*GenerateQuizInput, *
 
 			resp, err := generateWithGroq(buildQuizPrompt(input.Summary, input.NumQuestions))
 			if err != nil {
-				return nil, fmt.Errorf("gagal generate quiz: %w", err)
+				return nil, fmt.Errorf("failed to generate quiz: %w", err)
 			}
 
 			// Parse JSON dari response AI
 			output, err := parseQuizResponse(resp, input.NumQuestions)
 			if err != nil {
-				return nil, fmt.Errorf("gagal parse response quiz: %w", err)
+				return nil, fmt.Errorf("failed to parse response: %w", err)
 			}
 
 			return output, nil
@@ -51,7 +51,7 @@ func RegisterGenerateQuizFlow(g *genkit.Genkit) *core.Flow[*GenerateQuizInput, *
 }
 
 func buildQuizPrompt(summary string, numQuestions int) string {
-	return fmt.Sprintf(`Kamu adalah asisten pembuat soal ujian untuk mahasiswa Universitas Terbuka.
+	return fmt.Sprintf(`Kamu adalah asisten pembuat soal ujian untuk mahasiswa .
 
 Buatkan %d soal pilihan ganda berdasarkan materi berikut.
 

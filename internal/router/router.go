@@ -51,6 +51,10 @@ func Setup(app *fiber.App) {
 	lynkSvc := service.NewLynkService(lynkRepo, userRepo)
 	lynkHandler := handler.NewLynkHandler(lynkSvc)
 
+	reviewRepo := repository.NewReviewRepository()
+	reviewSvc := service.NewReviewService(reviewRepo, userRepo)
+	reviewHandler := handler.NewReviewHandler(reviewSvc)
+
 	api := app.Group("/api/v1")
 
 	// Global middleware
@@ -101,4 +105,11 @@ func Setup(app *fiber.App) {
 	quiz.Get("/history", quizHandler.GetHistory)
 	quiz.Get("/history/module/:moduleId", quizHandler.GetHistoryByModule)
 	quiz.Get("/:id/result", quizHandler.GetResult)
+
+	// --- Review routes ---
+	api.Get("/reviews", reviewHandler.GetAll)
+	reviews := api.Group("/reviews", middleware.Auth())
+	reviews.Post("/", reviewHandler.Create)
+	reviews.Put("/:id", reviewHandler.Update)
+	reviews.Delete("/:id", reviewHandler.Delete)
 }

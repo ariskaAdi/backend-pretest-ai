@@ -1,0 +1,183 @@
+openapi: 3.0.0
+info:
+  title: Review API
+  version: 1.0.0
+  description: API for submitting, viewing, updating, and deleting user reviews.
+
+paths:
+  /api/v1/reviews:
+    get:
+      summary: Get all reviews
+      description: Retrieve a list of all reviews submitted by users. Publicly accessible.
+      responses:
+        '200':
+          description: A list of reviews
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ReviewResponse'
+        '500':
+          description: Internal server error
+
+    post:
+      summary: Submit a new review
+      description: Submit a new review with position, text, and rating. Requires authentication.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateReviewRequest'
+      responses:
+        '201':
+          description: Review created successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  data:
+                    $ref: '#/components/schemas/ReviewResponse'
+        '400':
+          description: Invalid request format or validation failed
+        '401':
+          description: Unauthorized
+        '404':
+          description: User not found
+        '500':
+          description: Internal server error
+
+  /api/v1/reviews/{id}:
+    put:
+      summary: Update a review
+      description: Update an existing review. Only the author of the review can perform this action.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: ID of the review to update
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateReviewRequest'
+      responses:
+        '200':
+          description: Review updated successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+                  data:
+                    $ref: '#/components/schemas/ReviewResponse'
+        '400':
+          description: Invalid request format or validation failed
+        '401':
+          description: Unauthorized or not the author
+        '404':
+          description: Review not found
+        '500':
+          description: Internal server error
+
+    delete:
+      summary: Delete a review
+      description: Delete an existing review. Only the author of the review can perform this action.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: ID of the review to delete
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Review deleted successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+        '401':
+          description: Unauthorized or not the author
+        '404':
+          description: Review not found
+        '500':
+          description: Internal server error
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    CreateReviewRequest:
+      type: object
+      required:
+        - position
+        - review
+        - rating
+      properties:
+        position:
+          type: string
+          example: "Senior Software Engineer"
+        review:
+          type: string
+          example: "This platform is amazing, it helped me learn Go so fast!"
+        rating:
+          type: integer
+          minimum: 1
+          maximum: 5
+          example: 5
+
+    ReviewResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        username:
+          type: string
+        position:
+          type: string
+        review:
+          type: string
+        rating:
+          type: integer
+        created_at:
+          type: string
+          format: date-time

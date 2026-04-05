@@ -61,7 +61,7 @@ type MailerConfig struct {
 var Cfg *Config
 
 func Load() {
-	// Load .env if exist (it save to skip, production use env vars)
+	// Load .env if exist (it save to skip,)
 	if err := godotenv.Load(); err != nil {
 		log.Println("[config] .env file not found, using system env")
 	}
