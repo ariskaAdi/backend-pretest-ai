@@ -19,8 +19,6 @@ var (
 	ErrNotQuizOwner           = errors.New("kamu tidak memiliki akses ke quiz ini")
 	ErrModuleNotSummarized    = errors.New("modul belum selesai diproses, coba beberapa saat lagi")
 	ErrQuizAlreadyDone        = errors.New("quiz ini sudah dikerjakan")
-	ErrAnswerCountMismatch    = errors.New("jumlah jawaban tidak sesuai dengan jumlah soal")
-	ErrInvalidQuestionID      = errors.New("terdapat question_id yang tidak valid")
 	ErrInsufficientQuizQuota  = errors.New("kuota quiz habis, silakan beli paket terlebih dahulu")
 	ErrQuizCannotBeCancelled  = errors.New("hanya quiz yang belum dikerjakan yang dapat dibatalkan")
 )
@@ -33,10 +31,12 @@ type QuizServiceContract interface {
 	GetResult(ctx context.Context, userID string, quizID string) (*dto.QuizResultResponse, error)
 	Retry(ctx context.Context, userID string, quizID string) (*dto.QuizResponse, error)
 	Cancel(ctx context.Context, userID string, quizID string) error
+	Explain(ctx context.Context, userID string, quizID string) (*dto.QuizResultResponse, error)
 }
 
 type QuizAI interface {
 	GenerateQuiz(summary string, numQuestions int) (*pkgai.GenerateQuizOutput, error)
+	ExplainQuiz(wrongQuestions []pkgai.WrongQuestion, summary string) (*pkgai.ExplainQuizOutput, error)
 }
 
 type QuizService struct {
@@ -156,25 +156,18 @@ func (s *QuizService) Submit(ctx context.Context, userID string, quizID string, 
 	if quiz.Status != domain.QuizStatusPending {
 		return nil, ErrQuizAlreadyDone
 	}
-	if len(req.Answers) != len(quiz.Questions) {
-		return nil, ErrAnswerCountMismatch
-	}
-
 	// Buat map questionID → jawaban user
 	answerMap := make(map[string]string, len(req.Answers))
 	for _, a := range req.Answers {
 		answerMap[a.QuestionID] = a.Answer
 	}
 
-	// Hitung skor dan isi user_answer
+	// Hitung skor; soal yang tidak ada di answerMap → UserAnswer = "" → pasti salah
 	correct := 0
 	for i := range quiz.Questions {
-		answer, ok := answerMap[quiz.Questions[i].ID]
-		if !ok {
-			return nil, ErrInvalidQuestionID
-		}
+		answer := answerMap[quiz.Questions[i].ID] // "" jika tidak dijawab
 		quiz.Questions[i].UserAnswer = answer
-		if answer == quiz.Questions[i].CorrectAnswer {
+		if answer != "" && answer == quiz.Questions[i].CorrectAnswer {
 			correct++
 		}
 	}
@@ -280,6 +273,72 @@ func (s *QuizService) Cancel(ctx context.Context, userID string, quizID string) 
 	return nil
 }
 
+// Explain — generate AI explanation for wrong answers and persist them
+func (s *QuizService) Explain(ctx context.Context, userID string, quizID string) (*dto.QuizResultResponse, error) {
+	quiz, err := s.quizRepo.FindByID(ctx, quizID)
+	if err != nil {
+		return nil, err
+	}
+	if quiz == nil {
+		return nil, ErrQuizNotFound
+	}
+	if quiz.UserID != userID {
+		return nil, ErrNotQuizOwner
+	}
+	if quiz.Status != domain.QuizStatusCompleted {
+		return nil, fmt.Errorf("quiz belum selesai dikerjakan")
+	}
+
+	// Collect wrong questions that don't have explanation yet
+	var wrongQuestions []pkgai.WrongQuestion
+	for _, q := range quiz.Questions {
+		if q.UserAnswer != q.CorrectAnswer && q.Explanation == "" {
+			var options []string
+			_ = json.Unmarshal([]byte(q.Options), &options)
+			wrongQuestions = append(wrongQuestions, pkgai.WrongQuestion{
+				ID:            q.ID,
+				Question:      q.Text,
+				Options:       options,
+				CorrectAnswer: q.CorrectAnswer,
+				UserAnswer:    q.UserAnswer,
+			})
+		}
+	}
+
+	if len(wrongQuestions) == 0 {
+		return toQuizResultResponse(quiz), nil
+	}
+
+	// Get module summary for context
+	module, err := s.moduleRepo.FindByID(ctx, quiz.ModuleID)
+	if err != nil || module == nil {
+		return nil, fmt.Errorf("gagal mengambil data modul")
+	}
+
+	result, err := s.aiClient.ExplainQuiz(wrongQuestions, module.Summary)
+	if err != nil {
+		return nil, fmt.Errorf("gagal generate penjelasan: %w", err)
+	}
+
+	// Build map and persist
+	explanationMap := make(map[string]string, len(result.Explanations))
+	for _, e := range result.Explanations {
+		explanationMap[e.ID] = e.Explanation
+	}
+	if err := s.quizRepo.SaveExplanations(ctx, explanationMap); err != nil {
+		return nil, fmt.Errorf("gagal menyimpan penjelasan: %w", err)
+	}
+
+	// Patch in-memory questions so response reflects new explanations
+	for i := range quiz.Questions {
+		if exp, ok := explanationMap[quiz.Questions[i].ID]; ok {
+			quiz.Questions[i].Explanation = exp
+		}
+	}
+
+	return toQuizResultResponse(quiz), nil
+}
+
 // --- Mapper helpers ---
 
 func toQuizResponse(quiz *domain.Quiz, moduleTitle string) *dto.QuizResponse {
@@ -316,6 +375,7 @@ func toQuizResultResponse(quiz *domain.Quiz) *dto.QuizResultResponse {
 			CorrectAnswer: q.CorrectAnswer,
 			UserAnswer:    q.UserAnswer,
 			IsCorrect:     q.UserAnswer == q.CorrectAnswer,
+			Explanation:   q.Explanation,
 		})
 	}
 	score := 0

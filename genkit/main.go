@@ -33,8 +33,9 @@ func main() {
 	// Register semua flows dan simpan referensinya
 	summarizeFlow := flows.RegisterSummarizeFlow(g)
 	generateQuizFlow := flows.RegisterGenerateQuizFlow(g)
+	explainQuizFlow := flows.RegisterExplainQuizFlow(g)
 
-	log.Println("[genkit] flows registered: summarizeModule, generateQuiz")
+	log.Println("[genkit] flows registered: summarizeModule, generateQuiz, explainQuiz")
 
 	port := os.Getenv("GENKIT_PORT")
 	if port == "" {
@@ -45,6 +46,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/summarizeModule", genkit.Handler(summarizeFlow))
 	mux.HandleFunc("/generateQuiz", genkit.Handler(generateQuizFlow))
+	mux.HandleFunc("/explainQuiz", genkit.Handler(explainQuizFlow))
 
 	srv := &http.Server{
 		Addr:    ":" + port,

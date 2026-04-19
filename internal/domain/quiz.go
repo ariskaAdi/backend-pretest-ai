@@ -30,6 +30,7 @@ type Question struct {
 	Options       string   `gorm:"type:jsonb;not null"` // JSON array ["A. ...", "B. ...", "C. ...", "D. ..."]
 	CorrectAnswer string   `gorm:"type:varchar(1);not null"` // "A" | "B" | "C" | "D"
 	UserAnswer    string   `gorm:"type:varchar(1)"` // diisi saat submit
+	Explanation   string   `gorm:"type:text"`        // diisi setelah submit via AI
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
 }

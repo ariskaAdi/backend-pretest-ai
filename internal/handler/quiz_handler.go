@@ -76,9 +76,7 @@ func (h *QuizHandler) Submit(c *fiber.Ctx) error {
 		if errors.Is(err, service.ErrNotQuizOwner) {
 			return response.Unauthorized(c, err.Error())
 		}
-		if errors.Is(err, service.ErrQuizAlreadyDone) ||
-			errors.Is(err, service.ErrAnswerCountMismatch) ||
-			errors.Is(err, service.ErrInvalidQuestionID) {
+		if errors.Is(err, service.ErrQuizAlreadyDone) {
 			return response.BadRequest(c, err.Error())
 		}
 		return response.InternalError(c, "gagal submit jawaban")
@@ -151,6 +149,25 @@ func (h *QuizHandler) Cancel(c *fiber.Ctx) error {
 	}
 
 	return response.OK(c, "quiz berhasil dibatalkan dan kuota dikembalikan", nil)
+}
+
+// POST /api/v1/quiz/:id/explain
+func (h *QuizHandler) Explain(c *fiber.Ctx) error {
+	userID := c.Locals("userID").(string)
+	quizID := c.Params("id")
+
+	result, err := h.quizService.Explain(c.Context(), userID, quizID)
+	if err != nil {
+		if errors.Is(err, service.ErrQuizNotFound) {
+			return response.NotFound(c, err.Error())
+		}
+		if errors.Is(err, service.ErrNotQuizOwner) {
+			return response.Unauthorized(c, err.Error())
+		}
+		return response.InternalError(c, "gagal membuat penjelasan")
+	}
+
+	return response.OK(c, "penjelasan berhasil dibuat", result)
 }
 
 // POST /api/v1/quiz/:id/retry

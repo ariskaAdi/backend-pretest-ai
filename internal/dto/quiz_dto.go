@@ -4,11 +4,11 @@ package dto
 
 type GenerateQuizRequest struct {
 	ModuleID     string `json:"module_id"  validate:"required,uuid"`
-	NumQuestions int    `json:"num_questions" validate:"required,oneof=5 10 20"`
+	NumQuestions int    `json:"num_questions" validate:"required,oneof=20 40 50"`
 }
 
 type SubmitAnswerRequest struct {
-	Answers []AnswerItem `json:"answers" validate:"required,min=1,dive"`
+	Answers []AnswerItem `json:"answers" validate:"dive"`
 }
 
 type AnswerItem struct {
@@ -25,12 +25,17 @@ type QuestionResponse struct {
 }
 
 type QuestionResultResponse struct {
-	ID            string `json:"id"`
-	Text          string `json:"text"`
+	ID            string   `json:"id"`
+	Text          string   `json:"text"`
 	Options       []string `json:"options"`
-	CorrectAnswer string `json:"correct_answer"`
-	UserAnswer    string `json:"user_answer"`
-	IsCorrect     bool   `json:"is_correct"`
+	CorrectAnswer string   `json:"correct_answer"`
+	UserAnswer    string   `json:"user_answer"`
+	IsCorrect     bool     `json:"is_correct"`
+	Explanation   string   `json:"explanation,omitempty"`
+}
+
+type ExplainQuizRequest struct {
+	QuizID string `json:"quiz_id" validate:"required,uuid"`
 }
 
 type QuizResponse struct {

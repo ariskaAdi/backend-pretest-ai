@@ -370,42 +370,27 @@ func TestQuizService_Submit(t *testing.T) {
 		assert.Nil(t, resp)
 	})
 
-	t.Run("Jumlah jawaban mismatch", func(t *testing.T) {
+	t.Run("Jawaban parsial (soal tak terjawab dihitung salah)", func(t *testing.T) {
 		srv, mockQuizRepo, _, _ := setupQuizServiceTest(t)
 		quiz := &domain.Quiz{
-			UserID: "user-1",
-			Questions: []domain.Question{{ID: "q1"}, {ID: "q2"}},
+			ID: "q-1", UserID: "user-1",
+			Questions: []domain.Question{
+				{ID: "q1", CorrectAnswer: "A", Options: `["A"]`},
+				{ID: "q2", CorrectAnswer: "B", Options: `["B"]`},
+			},
 		}
 		mockQuizRepo.On("FindByID", mock.Anything, "q-1").Return(quiz, nil)
+		mockQuizRepo.On("SaveAnswersAndScore", mock.Anything, "q-1", mock.Anything, 50).Return(nil)
 
+		// Hanya kirim 1 dari 2 jawaban; q2 tidak dijawab → pasti salah
 		req := dto.SubmitAnswerRequest{
 			Answers: []dto.AnswerItem{{QuestionID: "q1", Answer: "A"}},
 		}
 
 		resp, err := srv.Submit(context.Background(), "user-1", "q-1", req)
 
-		assert.Error(t, err)
-		assert.Equal(t, service.ErrAnswerCountMismatch, err)
-		assert.Nil(t, resp)
-	})
-
-	t.Run("question_id tidak valid", func(t *testing.T) {
-		srv, mockQuizRepo, _, _ := setupQuizServiceTest(t)
-		quiz := &domain.Quiz{
-			UserID: "user-1",
-			Questions: []domain.Question{{ID: "q1"}},
-		}
-		mockQuizRepo.On("FindByID", mock.Anything, "q-1").Return(quiz, nil)
-
-		req := dto.SubmitAnswerRequest{
-			Answers: []dto.AnswerItem{{QuestionID: "invalid-id", Answer: "A"}},
-		}
-
-		resp, err := srv.Submit(context.Background(), "user-1", "q-1", req)
-
-		assert.Error(t, err)
-		assert.Equal(t, service.ErrInvalidQuestionID, err)
-		assert.Nil(t, resp)
+		assert.NoError(t, err)
+		assert.Equal(t, 50, resp.Score)
 	})
 
 	t.Run("Semua jawaban benar (100)", func(t *testing.T) {

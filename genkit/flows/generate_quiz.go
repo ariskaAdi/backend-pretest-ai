@@ -51,16 +51,46 @@ func RegisterGenerateQuizFlow(g *genkit.Genkit) *core.Flow[*GenerateQuizInput, *
 }
 
 func buildQuizPrompt(summary string, numQuestions int) string {
-	return fmt.Sprintf(`Kamu adalah asisten pembuat soal ujian untuk mahasiswa .
+	return fmt.Sprintf(`Kamu adalah pembuat soal ujian perguruan tinggi yang berpengalaman. Tugasmu membuat soal ujian berkualitas tinggi yang benar-benar menguji pemahaman mahasiswa terhadap materi.
 
-Buatkan %d soal pilihan ganda berdasarkan materi berikut.
+TUGAS: Buat tepat %[1]d soal pilihan ganda berdasarkan materi di bawah ini.
 
-Aturan soal:
-- Setiap soal memiliki tepat 4 pilihan jawaban (A, B, C, D)
-- Hanya ada 1 jawaban yang benar
-- Soal menguji pemahaman konsep, bukan hafalan
-- Tingkat kesulitan bervariasi (mudah, sedang, sulit)
-- Tulis dalam Bahasa Indonesia
+DISTRIBUSI SOAL YANG WAJIB DIPENUHI:
+- Pastikan soal tersebar merata ke SEMUA topik/bab yang ada dalam materi
+- Jangan hanya fokus pada satu topik — setiap topik utama harus terwakili
+- Distribusi tingkat kesulitan: 30%% mudah, 50%% sedang, 20%% sulit
+
+KRITERIA SOAL BERKUALITAS TINGGI:
+1. Soal harus menguji PEMAHAMAN MENDALAM, bukan sekadar hafalan istilah
+2. Gunakan variasi tipe pertanyaan:
+   - Konsep dan definisi ("Apa yang dimaksud dengan...")
+   - Perbedaan antar konsep ("Perbedaan antara X dan Y adalah...")
+   - Penerapan ("Dalam kasus berikut, metode yang tepat adalah...")
+   - Analisis ("Mengapa... / Apa yang terjadi jika...")
+   - Identifikasi ("Manakah yang BUKAN termasuk...")
+3. Pilihan jawaban yang SALAH (distractor) harus:
+   - Masuk akal dan plausibel, bukan jawaban absurd
+   - Merupakan konsep yang ada dalam materi namun digunakan pada konteks yang salah
+   - Menguji apakah mahasiswa benar-benar paham, bukan hanya menebak
+4. Hindari pertanyaan trivial seperti "Apa kepanjangan dari..." atau "Siapa yang mencetuskan..."
+5. Kalimat soal harus jelas, tidak ambigu, dan tidak mengandung clue jawaban
+
+ATURAN FORMAT:
+- Setiap soal memiliki TEPAT 4 pilihan (A, B, C, D)
+- Hanya 1 jawaban benar
+- Tulis dalam Bahasa Indonesia yang baik dan akademis
+- Jika materi mengandung formula matematika/fisika/kimia, gunakan notasi LaTeX:
+  * Inline formula: $x^2 + y^2 = r^2$
+  * Display formula: $$\int_a^b f(x)\,dx$$
+  * Himpunan: $A = \{x \mid x \in \mathbb{N}\}$, Interval: $(-\infty, 2] \cup [3, \infty)$
+  * Jika materi bukan sains/matematika, tulis teks biasa tanpa LaTeX
+
+DISTRIBUSI JAWABAN BENAR (WAJIB DIIKUTI KETAT):
+- Jawaban benar HARUS terdistribusi merata: sekitar 25%% soal jawab A, 25%% jawab B, 25%% jawab C, 25%% jawab D
+- Untuk %[1]d soal: masing-masing A, B, C, D harus muncul sebagai jawaban benar kurang lebih sama banyak
+- DILARANG membuat lebih dari 2 soal berturut-turut dengan jawaban yang sama
+- DILARANG mendominasi satu huruf — jika sudah 3 soal jawaban A, soal berikutnya HARUS B, C, atau D
+- Letakkan jawaban benar di posisi pilihan yang berbeda-beda (tidak selalu pilihan pertama)
 
 Materi:
 %s
@@ -74,10 +104,10 @@ Kembalikan HANYA JSON tanpa penjelasan apapun, tanpa markdown, tanpa backtick, d
       "answer": "A"
     }
   ]
-}`, numQuestions, summary)
+}`, numQuestions, summary) // %[1]d = numQuestions (reused), %[2]s = summary
 }
 
-func parseQuizResponse(raw string, _ int) (*GenerateQuizOutput, error) {
+func parseQuizResponse(raw string, numQuestions int) (*GenerateQuizOutput, error) {
 	// Bersihkan kalau AI masih tambahkan markdown
 	cleaned := cleanJSON(raw)
 
@@ -103,6 +133,11 @@ func parseQuizResponse(raw string, _ int) (*GenerateQuizOutput, error) {
 		}
 		// Normalisasi answer ke huruf kapital
 		output.Questions[i].Answer = normalizeAnswer(q.Answer)
+	}
+
+	// Trim ke jumlah yang diminta — AI kadang menghasilkan lebih
+	if numQuestions > 0 && len(output.Questions) > numQuestions {
+		output.Questions = output.Questions[:numQuestions]
 	}
 
 	return &output, nil

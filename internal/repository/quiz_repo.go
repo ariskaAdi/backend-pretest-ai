@@ -17,6 +17,7 @@ type QuizRepositoryContract interface {
 	FindByUserIDAndModuleID(ctx context.Context, userID string, moduleID string) ([]domain.Quiz, error)
 	SaveAnswersAndScore(ctx context.Context, quizID string, questions []domain.Question, score int) error
 	UpdateStatus(ctx context.Context, quizID string, status domain.QuizStatus) error
+	SaveExplanations(ctx context.Context, explanations map[string]string) error
 }
 
 type QuizRepository struct {
@@ -69,6 +70,19 @@ func (r *QuizRepository) UpdateStatus(ctx context.Context, quizID string, status
 		Model(&domain.Quiz{}).
 		Where("id = ?", quizID).
 		Update("status", status).Error
+}
+
+func (r *QuizRepository) SaveExplanations(ctx context.Context, explanations map[string]string) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for questionID, explanation := range explanations {
+			if err := tx.Model(&domain.Question{}).
+				Where("id = ?", questionID).
+				Update("explanation", explanation).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 func (r *QuizRepository) SaveAnswersAndScore(ctx context.Context, quizID string, questions []domain.Question, score int) error {

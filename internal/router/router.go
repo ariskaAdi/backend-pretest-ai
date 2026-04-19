@@ -8,6 +8,7 @@ import (
 	"backend-pretest-ai/internal/repository"
 	"backend-pretest-ai/internal/service"
 	"backend-pretest-ai/pkg/ai"
+	pdfpkg "backend-pretest-ai/pkg/pdf"
 	"backend-pretest-ai/pkg/storage"
 )
 
@@ -31,6 +32,9 @@ import (
 // @name                        Authorization
 // @description                 Type "Bearer " followed by your JWT token.
 func Setup(app *fiber.App) {
+	// Wire PDF vision extractor — fallback untuk PDF berbasis gambar/scan
+	pdfpkg.VisionExtractor = ai.Client.VisionExtract
+
 	// --- Wire dependencies ---
 	userRepo := repository.NewUserRepository()
 	userSvc := service.NewUserService(userRepo)
@@ -101,6 +105,7 @@ func Setup(app *fiber.App) {
 	quiz.Post("/", quizHandler.Generate)
 	quiz.Delete("/:id", quizHandler.Cancel)
 	quiz.Post("/:id/submit", quizHandler.Submit)
+	quiz.Post("/:id/explain", quizHandler.Explain)
 	quiz.Post("/:id/retry", quizHandler.Retry)
 	quiz.Get("/history", quizHandler.GetHistory)
 	quiz.Get("/history/module/:moduleId", quizHandler.GetHistoryByModule)
