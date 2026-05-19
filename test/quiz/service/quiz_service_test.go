@@ -172,8 +172,8 @@ type MockQuizAI struct {
 	mock.Mock
 }
 
-func (m *MockQuizAI) GenerateQuiz(summary string, numQuestions int) (*pkgai.GenerateQuizOutput, error) {
-	args := m.Called(summary, numQuestions)
+func (m *MockQuizAI) GenerateQuiz(rawText string, numQuestions int) (*pkgai.GenerateQuizOutput, error) {
+	args := m.Called(rawText, numQuestions)
 	if args.Get(0) != nil {
 		return args.Get(0).(*pkgai.GenerateQuizOutput), args.Error(1)
 	}
@@ -224,20 +224,9 @@ func TestQuizService_Generate(t *testing.T) {
 		assert.Nil(t, resp)
 	})
 
-	t.Run("is_summarized = false", func(t *testing.T) {
+	t.Run("RawText kosong", func(t *testing.T) {
 		srv, _, mockModuleRepo, _ := setupQuizServiceTest(t)
-		mockModuleRepo.On("FindByID", mock.Anything, "mod-1").Return(&domain.Module{UserID: "user-1", IsSummarized: false}, nil)
-
-		resp, err := srv.Generate(context.Background(), "user-1", dto.GenerateQuizRequest{ModuleID: "mod-1"})
-
-		assert.Error(t, err)
-		assert.Equal(t, service.ErrModuleNotSummarized, err)
-		assert.Nil(t, resp)
-	})
-
-	t.Run("Summary kosong meski is_summarized = true", func(t *testing.T) {
-		srv, _, mockModuleRepo, _ := setupQuizServiceTest(t)
-		mockModuleRepo.On("FindByID", mock.Anything, "mod-1").Return(&domain.Module{UserID: "user-1", IsSummarized: true, Summary: ""}, nil)
+		mockModuleRepo.On("FindByID", mock.Anything, "mod-1").Return(&domain.Module{UserID: "user-1", RawText: ""}, nil)
 
 		resp, err := srv.Generate(context.Background(), "user-1", dto.GenerateQuizRequest{ModuleID: "mod-1"})
 
@@ -248,8 +237,8 @@ func TestQuizService_Generate(t *testing.T) {
 
 	t.Run("Genkit gagal (error)", func(t *testing.T) {
 		srv, _, mockModuleRepo, mockAI := setupQuizServiceTest(t)
-		mockModuleRepo.On("FindByID", mock.Anything, "mod-1").Return(&domain.Module{UserID: "user-1", IsSummarized: true, Summary: "summary", Title: "Title"}, nil)
-		mockAI.On("GenerateQuiz", "summary", 5).Return(nil, errors.New("ai error"))
+		mockModuleRepo.On("FindByID", mock.Anything, "mod-1").Return(&domain.Module{UserID: "user-1", RawText: "raw_text", Title: "Title"}, nil)
+		mockAI.On("GenerateQuiz", "raw_text", 5).Return(nil, errors.New("ai error"))
 
 		resp, err := srv.Generate(context.Background(), "user-1", dto.GenerateQuizRequest{ModuleID: "mod-1", NumQuestions: 5})
 
@@ -260,8 +249,8 @@ func TestQuizService_Generate(t *testing.T) {
 
 	t.Run("Sukses, num_questions=5", func(t *testing.T) {
 		srv, mockQuizRepo, mockModuleRepo, mockAI := setupQuizServiceTest(t)
-		mockModuleRepo.On("FindByID", mock.Anything, "mod-1").Return(&domain.Module{UserID: "user-1", IsSummarized: true, Summary: "summary", Title: "Title"}, nil)
-		
+		mockModuleRepo.On("FindByID", mock.Anything, "mod-1").Return(&domain.Module{UserID: "user-1", RawText: "raw_text", Title: "Title"}, nil)
+
 		aiOutput := &pkgai.GenerateQuizOutput{
 			Questions: []pkgai.Question{
 				{Question: "Q1", Options: []string{"A", "B", "C", "D"}, Answer: "A"},
@@ -271,7 +260,7 @@ func TestQuizService_Generate(t *testing.T) {
 				{Question: "Q5", Options: []string{"A", "B", "C", "D"}, Answer: "A"},
 			},
 		}
-		mockAI.On("GenerateQuiz", "summary", 5).Return(aiOutput, nil)
+		mockAI.On("GenerateQuiz", "raw_text", 5).Return(aiOutput, nil)
 		mockQuizRepo.On("Create", mock.Anything, mock.AnythingOfType("*domain.Quiz")).Return(nil)
 
 		resp, err := srv.Generate(context.Background(), "user-1", dto.GenerateQuizRequest{ModuleID: "mod-1", NumQuestions: 5})
@@ -285,15 +274,15 @@ func TestQuizService_Generate(t *testing.T) {
 
 	t.Run("Sukses, num_questions=10", func(t *testing.T) {
 		srv, mockQuizRepo, mockModuleRepo, mockAI := setupQuizServiceTest(t)
-		mockModuleRepo.On("FindByID", mock.Anything, "mod-1").Return(&domain.Module{UserID: "user-1", IsSummarized: true, Summary: "summary", Title: "Title"}, nil)
-		
+		mockModuleRepo.On("FindByID", mock.Anything, "mod-1").Return(&domain.Module{UserID: "user-1", RawText: "raw_text", Title: "Title"}, nil)
+
 		questions := make([]pkgai.Question, 10)
 		for i := 0; i < 10; i++ {
 			questions[i] = pkgai.Question{Question: "Q", Options: []string{"A", "B", "C", "D"}, Answer: "A"}
 		}
 		aiOutput := &pkgai.GenerateQuizOutput{Questions: questions}
-		
-		mockAI.On("GenerateQuiz", "summary", 10).Return(aiOutput, nil)
+
+		mockAI.On("GenerateQuiz", "raw_text", 10).Return(aiOutput, nil)
 		mockQuizRepo.On("Create", mock.Anything, mock.AnythingOfType("*domain.Quiz")).Return(nil)
 
 		resp, err := srv.Generate(context.Background(), "user-1", dto.GenerateQuizRequest{ModuleID: "mod-1", NumQuestions: 10})
@@ -306,12 +295,12 @@ func TestQuizService_Generate(t *testing.T) {
 	t.Run("Response soal tidak mengandung correct_answer", func(t *testing.T) {
 		// DTO QuizResponse.Questions adalah []dto.QuestionResponse yang memang tidak punya CorrectAnswer
 		srv, mockQuizRepo, mockModuleRepo, mockAI := setupQuizServiceTest(t)
-		mockModuleRepo.On("FindByID", mock.Anything, "mod-1").Return(&domain.Module{UserID: "user-1", IsSummarized: true, Summary: "summary", Title: "Title"}, nil)
-		
+		mockModuleRepo.On("FindByID", mock.Anything, "mod-1").Return(&domain.Module{UserID: "user-1", RawText: "raw_text", Title: "Title"}, nil)
+
 		aiOutput := &pkgai.GenerateQuizOutput{
 			Questions: []pkgai.Question{{Question: "Q1", Options: []string{"A"}, Answer: "A"}},
 		}
-		mockAI.On("GenerateQuiz", "summary", 1).Return(aiOutput, nil)
+		mockAI.On("GenerateQuiz", "raw_text", 1).Return(aiOutput, nil)
 		mockQuizRepo.On("Create", mock.Anything, mock.AnythingOfType("*domain.Quiz")).Return(nil)
 
 		_, err := srv.Generate(context.Background(), "user-1", dto.GenerateQuizRequest{ModuleID: "mod-1", NumQuestions: 1})
@@ -628,13 +617,13 @@ func TestQuizService_Retry(t *testing.T) {
 		mockQuizRepo.On("FindByID", mock.Anything, "q-old").Return(&domain.Quiz{UserID: "user-1", ModuleID: "mod-1", NumQuestions: 5}, nil)
 		
 		// Setup module
-		mockModuleRepo.On("FindByID", mock.Anything, "mod-1").Return(&domain.Module{UserID: "user-1", IsSummarized: true, Summary: "summary", Title: "Title"}, nil)
-		
+		mockModuleRepo.On("FindByID", mock.Anything, "mod-1").Return(&domain.Module{UserID: "user-1", RawText: "raw_text", Title: "Title"}, nil)
+
 		// Setup AI generate quiz baru
 		aiOutput := &pkgai.GenerateQuizOutput{
 			Questions: []pkgai.Question{{Question: "Q baru", Options: []string{"A"}, Answer: "A"}},
 		}
-		mockAI.On("GenerateQuiz", "summary", 5).Return(aiOutput, nil)
+		mockAI.On("GenerateQuiz", "raw_text", 5).Return(aiOutput, nil)
 		mockQuizRepo.On("Create", mock.Anything, mock.AnythingOfType("*domain.Quiz")).Return(nil).Run(func(args mock.Arguments) {
 			q := args.Get(1).(*domain.Quiz)
 			q.ID = "q-new"

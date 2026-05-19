@@ -26,6 +26,7 @@ type UserRepository interface {
 	DeductSummarizeQuota(ctx context.Context, userID string) error
 	RestoreQuizQuota(ctx context.Context, userID string) error
 	RestoreSummarizeQuota(ctx context.Context, userID string) error
+	UpdatePassword(ctx context.Context, userID string, hashedPassword string) error
 }
 
 type userRepository struct {
@@ -148,4 +149,14 @@ func (r *userRepository) RestoreSummarizeQuota(ctx context.Context, userID strin
 		Model(&domain.User{}).
 		Where("id = ?", userID).
 		UpdateColumn("summarize_quota", gorm.Expr("summarize_quota + 1")).Error
+}
+
+func (r *userRepository) UpdatePassword(ctx context.Context, userID string, hashedPassword string) error {
+	return r.db.WithContext(ctx).
+		Model(&domain.User{}).
+		Where("id = ?", userID).
+		Updates(map[string]any{
+			"password": hashedPassword,
+			"otp":      "",
+		}).Error
 }

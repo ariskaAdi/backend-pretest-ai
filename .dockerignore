@@ -1,0 +1,15 @@
+.git
+.github
+.gitignore
+.env
+.env.*
+genkit/
+doc/
+test/
+log/
+bin/
+vendor/
+*.md
+coverage.out
+coverage.html
+prompt.txt

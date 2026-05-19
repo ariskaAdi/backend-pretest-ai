@@ -1,0 +1,21 @@
+# Development only — jalankan PostgreSQL lokal
+# Usage: docker compose -f docker-compose.dev.yml up -d
+#
+# Backend dan genkit tetap dijalankan native:
+#   make run
+#   make run-genkit
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: pretestai
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_dev_data:

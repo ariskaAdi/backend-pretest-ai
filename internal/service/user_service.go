@@ -34,6 +34,8 @@ type UserService interface {
 	Login(ctx context.Context, req dto.LoginRequest) (*dto.LoginResponse, error)
 	RequestUpdateEmail(ctx context.Context, userID string, req dto.UpdateEmailRequest) error
 	VerifyUpdateEmail(ctx context.Context, userID string, req dto.VerifyUpdateEmailRequest) error
+	RequestUpdatePassword(ctx context.Context, userID string, req dto.UpdatePasswordRequest) error
+	VerifyUpdatePassword(ctx context.Context, userID string, req dto.UpdatePasswordRequest) error
 	GetMe(ctx context.Context, userID string) (*dto.UserResponse, error)
 	ResendOTP(ctx context.Context, req dto.ResendOTPRequest) error
 }
@@ -138,9 +140,9 @@ func (s *userService) Login(ctx context.Context, req dto.LoginRequest) (*dto.Log
 	return &dto.LoginResponse{
 		Token: token,
 		User: dto.UserResponse{
-			ID:         user.ID,
-			Name:       user.Name,
-			Email:      user.Email,
+			ID:             user.ID,
+			Name:           user.Name,
+			Email:          user.Email,
 			Role:           string(user.Role),
 			QuizQuota:      user.QuizQuota,
 			SummarizeQuota: user.SummarizeQuota,
@@ -220,6 +222,58 @@ func (s *userService) VerifyUpdateEmail(ctx context.Context, userID string, req 
 	return s.userRepo.UpdateEmail(ctx, userID, req.NewEmail)
 }
 
+func (s *userService) RequestUpdatePassword(ctx context.Context, userID string, req dto.UpdatePasswordRequest) error {
+	user, err := s.userRepo.FindByID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if user == nil {
+		return ErrUserNotFound
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.CurrentPassword)); err != nil {
+		return ErrInvalidCredentials
+	}
+
+	otp, err := generateOTP()
+	if err != nil {
+		return fmt.Errorf("failed to generate OTP: %w", err)
+	}
+
+	if err := s.userRepo.UpdateOTP(ctx, userID, otp); err != nil {
+		return err
+	}
+
+	go func() {
+		if err := mailer.Client.SendOTP(user.Email, otp); err != nil {
+			log.Printf("[user_service] gagal kirim OTP update password ke %s: %v", user.Email, err)
+		}
+	}()
+
+	return nil
+}
+
+func (s *userService) VerifyUpdatePassword(ctx context.Context, userID string, req dto.UpdatePasswordRequest) error {
+	user, err := s.userRepo.FindByID(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if user == nil {
+		return ErrUserNotFound
+	}
+
+	if user.OTP == "" || user.OTP != req.OTP {
+		return ErrInvalidOTP
+	}
+
+	hashed, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("failed to hash password: %w", err)
+	}
+
+	return s.userRepo.UpdatePassword(ctx, userID, string(hashed))
+}
+
 // GetMe — ambil profil user yang sedang login
 func (s *userService) GetMe(ctx context.Context, userID string) (*dto.UserResponse, error) {
 	user, err := s.userRepo.FindByID(ctx, userID)
@@ -231,9 +285,9 @@ func (s *userService) GetMe(ctx context.Context, userID string) (*dto.UserRespon
 	}
 
 	return &dto.UserResponse{
-		ID:         user.ID,
-		Name:       user.Name,
-		Email:      user.Email,
+		ID:             user.ID,
+		Name:           user.Name,
+		Email:          user.Email,
 		Role:           string(user.Role),
 		QuizQuota:      user.QuizQuota,
 		SummarizeQuota: user.SummarizeQuota,

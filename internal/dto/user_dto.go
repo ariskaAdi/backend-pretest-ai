@@ -27,6 +27,13 @@ type VerifyUpdateEmailRequest struct {
 	OTP      string `json:"otp"       validate:"required,len=6"`
 }
 
+type UpdatePasswordRequest struct {
+	CurrentPassword string `json:"current_password" validate:"required"`
+	NewPassword     string `json:"new_password"     validate:"required,min=8"`
+	ConfirmPassword string `json:"confirm_password" validate:"required,eqfield=NewPassword"`
+	OTP             string `json:"otp"              validate:"required,len=6"`
+}
+
 type ResendOTPRequest struct {
 	Email string `json:"email" validate:"required,email"`
 }

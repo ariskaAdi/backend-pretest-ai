@@ -270,6 +270,59 @@ func (h *UserHandler) VerifyUpdateEmail(c *fiber.Ctx) error {
 	return response.OK(c, "email updated successfully", nil)
 }
 
+// POST /api/v1/user/password/request-update
+func (h *UserHandler) RequestUpdatePassword(c *fiber.Ctx) error {
+	userID := c.Locals("userID").(string)
+
+	var req dto.UpdatePasswordRequest
+	if err := c.BodyParser(&req); err != nil {
+		return response.BadRequest(c, "invalid request format")
+	}
+	if req.CurrentPassword == "" {
+		return response.BadRequest(c, "CurrentPassword is required")
+	}
+
+	if err := h.userService.RequestUpdatePassword(c.Context(), userID, req); err != nil {
+		if errors.Is(err, service.ErrInvalidCredentials) {
+			return response.Unauthorized(c, err.Error())
+		}
+		if errors.Is(err, service.ErrUserNotFound) {
+			return response.NotFound(c, err.Error())
+		}
+		return response.InternalError(c, "failed to request password update")
+	}
+
+	return response.OK(c, "OTP sent to your email", nil)
+}
+
+// POST /api/v1/user/password/verify-update
+func (h *UserHandler) VerifyUpdatePassword(c *fiber.Ctx) error {
+	userID := c.Locals("userID").(string)
+
+	var req dto.UpdatePasswordRequest
+	if err := c.BodyParser(&req); err != nil {
+		return response.BadRequest(c, "invalid request format")
+	}
+	if err := h.validate.Struct(req); err != nil {
+		return response.BadRequest(c, formatValidationError(err))
+	}
+
+	if err := h.userService.VerifyUpdatePassword(c.Context(), userID, req); err != nil {
+		if errors.Is(err, service.ErrInvalidOTP) {
+			return response.BadRequest(c, err.Error())
+		}
+		if errors.Is(err, service.ErrInvalidCredentials) {
+			return response.Unauthorized(c, err.Error())
+		}
+		if errors.Is(err, service.ErrUserNotFound) {
+			return response.NotFound(c, err.Error())
+		}
+		return response.InternalError(c, "failed to update password")
+	}
+
+	return response.OK(c, "password updated successfully", nil)
+}
+
 // formatValidationError — ambil pesan error pertama dari validator
 func formatValidationError(err error) string {
 	var ve validator.ValidationErrors

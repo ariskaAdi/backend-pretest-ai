@@ -28,25 +28,26 @@ tidy: ## go mod tidy untuk backend dan genkit
 
 migrate: ## Jalankan semua migration SQL ke DB
 	@echo "Running migrations..."
-	docker exec -i pretest-ai-postgres psql -U postgres -d pretestai < migrations/001_create_users.sql
-	docker exec -i pretest-ai-postgres psql -U postgres -d pretestai < migrations/002_create_modules.sql
-	docker exec -i pretest-ai-postgres psql -U postgres -d pretestai < migrations/004_create_quizzes.sql
-	docker exec -i pretest-ai-postgres psql -U postgres -d pretestai < migrations/005_add_summarize_failed_to_modules.sql
-	docker exec -i pretest-ai-postgres psql -U postgres -d pretestai < migrations/006_update_user_quotas.sql
-	docker exec -i pretest-ai-postgres psql -U postgres -d pretestai < migrations/007_create_lynk_transactions.sql
-	docker exec -i pretest-ai-postgres psql -U postgres -d pretestai < migrations/008_add_cancelled_quiz_status.sql
-	docker exec -i pretest-ai-postgres psql -U postgres -d pretestai < migrations/009_create_reviews.sql
-	docker exec -i pretest-ai-postgres psql -U postgres -d pretestai < migrations/010_add_user_id_to_reviews.sql
+	docker exec -i pretest-ai psql -U postgres -d pretestai < migrations/001_create_users.sql
+	docker exec -i pretest-ai psql -U postgres -d pretestai < migrations/002_create_modules.sql
+	docker exec -i pretest-ai psql -U postgres -d pretestai < migrations/004_create_quizzes.sql
+	docker exec -i pretest-ai psql -U postgres -d pretestai < migrations/005_add_summarize_failed_to_modules.sql
+	docker exec -i pretest-ai psql -U postgres -d pretestai < migrations/006_update_user_quotas.sql
+	docker exec -i pretest-ai psql -U postgres -d pretestai < migrations/007_create_lynk_transactions.sql
+	docker exec -i pretest-ai psql -U postgres -d pretestai < migrations/008_add_cancelled_quiz_status.sql
+	docker exec -i pretest-ai psql -U postgres -d pretestai < migrations/009_create_reviews.sql
+	docker exec -i pretest-ai psql -U postgres -d pretestai < migrations/010_add_user_id_to_reviews.sql
+	docker exec -i pretest-ai psql -U postgres -d pretestai < "migrations/011_add_explanation_&_question.sql"
 	@echo "✅ Migration selesai"
 
 migrate-fresh: ## Drop semua tabel lalu migrate ulang (HATI-HATI: hapus semua data)
 	@echo "⚠️  Dropping all tables..."
-	docker exec -i pretest-ai-postgres psql -U postgres -d pretestai -c \
+	docker exec -i pretest-ai psql -U postgres -d pretestai -c \
 		"DROP TABLE IF EXISTS questions, quizzes, modules, users CASCADE; DROP TYPE IF EXISTS user_role, quiz_status CASCADE;"
 	@$(MAKE) migrate
 
 db-shell: ## Masuk ke psql shell
-	docker exec -it pretest-ai-postgres psql -U postgres -d pretestai
+	docker exec -it pretest-ai psql -U postgres -d pretestai
 
 # ── Test ─────────────────────────────────────
 

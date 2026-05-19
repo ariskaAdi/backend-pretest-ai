@@ -86,6 +86,8 @@ func Setup(app *fiber.App) {
 	user.Get("/me", userHandler.GetMe)
 	user.Post("/email/request-update", userHandler.RequestUpdateEmail)
 	user.Post("/email/verify-update", userHandler.VerifyUpdateEmail)
+	user.Post("/password/request-update", userHandler.RequestUpdatePassword)
+	user.Post("/password/verify-update", userHandler.VerifyUpdatePassword)
 
 	// --- Module routes (protected) ---
 	modules := api.Group("/modules", middleware.Auth())

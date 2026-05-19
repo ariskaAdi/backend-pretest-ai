@@ -87,24 +87,30 @@ func (g *genkitClient) Summarize(pdfText string) (*SummarizeOutput, error) {
 // --- Generate Quiz ---
 
 type GenerateQuizInput struct {
-	Summary      string `json:"summary"`
+	RawText      string `json:"raw_text"`
 	NumQuestions int    `json:"num_questions"`
 }
 
+type DiagramData struct {
+	Type    string `json:"type"`    // "svg"
+	Content string `json:"content"` // SVG string
+}
+
 type Question struct {
-	Question string   `json:"question"`
-	Options  []string `json:"options"`
-	Answer   string   `json:"answer"`
+	Question string       `json:"question"`
+	Options  []string     `json:"options"`
+	Answer   string       `json:"answer"`
+	Diagram  *DiagramData `json:"diagram,omitempty"`
 }
 
 type GenerateQuizOutput struct {
 	Questions []Question `json:"questions"`
 }
 
-func (g *genkitClient) GenerateQuiz(summary string, numQuestions int) (*GenerateQuizOutput, error) {
+func (g *genkitClient) GenerateQuiz(rawText string, numQuestions int) (*GenerateQuizOutput, error) {
 	var output GenerateQuizOutput
 	err := g.call("generateQuiz", GenerateQuizInput{
-		Summary:      summary,
+		RawText:      rawText,
 		NumQuestions: numQuestions,
 	}, &output)
 	if err != nil {

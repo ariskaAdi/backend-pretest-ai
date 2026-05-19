@@ -24,13 +24,14 @@ type Quiz struct {
 }
 
 type Question struct {
-	ID            string   `gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
-	QuizID        string   `gorm:"type:uuid;not null;index"`
-	Text          string   `gorm:"type:text;not null"`
-	Options       string   `gorm:"type:jsonb;not null"` // JSON array ["A. ...", "B. ...", "C. ...", "D. ..."]
-	CorrectAnswer string   `gorm:"type:varchar(1);not null"` // "A" | "B" | "C" | "D"
-	UserAnswer    string   `gorm:"type:varchar(1)"` // diisi saat submit
-	Explanation   string   `gorm:"type:text"`        // diisi setelah submit via AI
+	ID            string    `gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	QuizID        string    `gorm:"type:uuid;not null;index"`
+	Text          string    `gorm:"type:text;not null"`
+	Options       string    `gorm:"type:jsonb;not null"` // JSON array ["A. ...", "B. ...", "C. ...", "D. ..."]
+	CorrectAnswer string    `gorm:"type:varchar(1);not null"` // "A" | "B" | "C" | "D"
+	UserAnswer    string    `gorm:"type:varchar(1)"` // diisi saat submit
+	Explanation   string    `gorm:"type:text"`       // diisi setelah submit via AI
+	Diagram       string    `gorm:"type:text"`       // JSON-encoded DiagramData, kosong jika tidak ada
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
 }

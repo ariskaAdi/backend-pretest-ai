@@ -1,0 +1,66 @@
+# Production — 1 VPS, semua service
+# Disimpan di server: /opt/pretest/docker-compose.yml
+#
+# /opt/pretest/.env wajib berisi:
+#   BACKEND_IMAGE=ghcr.io/<owner>/pretest-backend:latest
+#   FRONTEND_IMAGE=ghcr.io/<owner>/pretest-frontend:latest
+#   GENKIT_IMAGE=ghcr.io/<owner>/pretest-genkit:latest
+#   DB_USER, DB_PASSWORD, DB_NAME
+#   GROQ_API_KEY
+#   NEXT_PUBLIC_API_URL=https://yourdomain.com
+
+services:
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+      - /var/www/certbot:/var/www/certbot:ro
+    depends_on:
+      - backend
+      - frontend
+
+  frontend:
+    image: ${FRONTEND_IMAGE}
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+
+  backend:
+    image: ${BACKEND_IMAGE}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DB_HOST: postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  genkit:
+    image: ${GENKIT_IMAGE}
+    restart: unless-stopped
+    environment:
+      GROQ_API_KEY: ${GROQ_API_KEY}
+      GENKIT_PORT: 3400
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:

@@ -1,0 +1,146 @@
+name: Deploy Backend & Genkit
+
+on:
+  push:
+    branches: [main, develop]
+
+jobs:
+  build:
+    name: Build & Push Images
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    outputs:
+      backend_image: ${{ steps.set-images.outputs.backend_image }}
+      genkit_image: ${{ steps.set-images.outputs.genkit_image }}
+      image_tag: ${{ steps.set-images.outputs.image_tag }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set image names & tag
+        id: set-images
+        run: |
+          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          TAG=$( [ "${{ github.ref_name }}" = "main" ] && echo "latest" || echo "develop" )
+          echo "backend_image=ghcr.io/${OWNER}/pretest-backend" >> $GITHUB_OUTPUT
+          echo "genkit_image=ghcr.io/${OWNER}/pretest-genkit" >> $GITHUB_OUTPUT
+          echo "image_tag=${TAG}" >> $GITHUB_OUTPUT
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build & Push Backend
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: |
+            ${{ steps.set-images.outputs.backend_image }}:${{ steps.set-images.outputs.image_tag }}
+            ${{ steps.set-images.outputs.backend_image }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build & Push Genkit
+        uses: docker/build-push-action@v5
+        with:
+          context: ./genkit
+          file: ./genkit/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.set-images.outputs.genkit_image }}:${{ steps.set-images.outputs.image_tag }}
+            ${{ steps.set-images.outputs.genkit_image }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ─── STAGING (develop) ────────────────────────────────────────────────────
+  # 1 VPS staging: backend + genkit langsung, tanpa nginx (Supabase DB)
+
+  deploy-staging:
+    name: "[Staging] Deploy Backend & Genkit"
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/develop'
+    environment: staging
+
+    steps:
+      - name: Deploy ke staging
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+            docker pull ${{ needs.build.outputs.backend_image }}:develop
+            docker stop pretest-backend || true && docker rm pretest-backend || true
+            docker run -d \
+              --name pretest-backend \
+              --restart unless-stopped \
+              --env-file /opt/pretest/.env \
+              -p 8080:8080 \
+              ${{ needs.build.outputs.backend_image }}:develop
+
+            docker pull ${{ needs.build.outputs.genkit_image }}:develop
+            docker stop pretest-genkit || true && docker rm pretest-genkit || true
+            docker run -d \
+              --name pretest-genkit \
+              --restart unless-stopped \
+              -e GROQ_API_KEY=${{ secrets.GROQ_API_KEY }} \
+              -e GENKIT_PORT=3400 \
+              ${{ needs.build.outputs.genkit_image }}:develop
+
+            docker image prune -f
+
+  # ─── PRODUCTION (main) ────────────────────────────────────────────────────
+  # 1 VPS production: semua service via docker compose (nginx + frontend + backend + genkit + postgres)
+
+  deploy-production:
+    name: "[Production] Deploy Backend & Genkit"
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    environment: production
+
+    steps:
+      - name: Checkout (untuk ambil docker-compose + nginx config)
+        uses: actions/checkout@v4
+
+      - name: Upload docker-compose.yml & nginx config ke server
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          source: "docker-compose.yml,nginx/"
+          target: /opt/pretest/
+
+      - name: Deploy backend & genkit via docker compose
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SERVER_SSH_KEY }}
+          script: |
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+            # Update image tags di .env
+            sed -i "s|BACKEND_IMAGE=.*|BACKEND_IMAGE=${{ needs.build.outputs.backend_image }}:latest|" /opt/pretest/.env
+            sed -i "s|GENKIT_IMAGE=.*|GENKIT_IMAGE=${{ needs.build.outputs.genkit_image }}:latest|" /opt/pretest/.env
+
+            cd /opt/pretest
+            docker compose pull backend genkit
+            docker compose up -d backend genkit postgres nginx
+            docker image prune -f

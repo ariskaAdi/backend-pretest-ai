@@ -23,13 +23,13 @@ func RegisterSummarizeFlow(g *genkit.Genkit) *core.Flow[*SummarizeInput, *Summar
 				return nil, fmt.Errorf("pdf_text tidak boleh kosong")
 			}
 
-			// Potong teks kalau terlalu panjang — Groq batas ~6000 token ≈ 24000 karakter
+			// Potong teks kalau terlalu panjang — gemma2-9b-it TPM 15000, sisakan ~4000 token untuk output
 			text := input.PdfText
-			if len(text) > 24000 {
-				text = text[:24000]
+			if len(text) > 16000 {
+				text = text[:16000]
 			}
 
-			resp, err := generateWithGroq(buildSummarizePrompt(text))
+			resp, err := generateText(buildSummarizePrompt(text))
 			if err != nil {
 				return nil, fmt.Errorf("gagal generate summary: %w", err)
 			}

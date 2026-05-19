@@ -18,20 +18,27 @@ type AnswerItem struct {
 
 // --- Response ---
 
+type DiagramData struct {
+	Type    string `json:"type"`
+	Content string `json:"content"`
+}
+
 type QuestionResponse struct {
-	ID      string   `json:"id"`
-	Text    string   `json:"text"`
-	Options []string `json:"options"`
+	ID      string       `json:"id"`
+	Text    string       `json:"text"`
+	Options []string     `json:"options"`
+	Diagram *DiagramData `json:"diagram,omitempty"`
 }
 
 type QuestionResultResponse struct {
-	ID            string   `json:"id"`
-	Text          string   `json:"text"`
-	Options       []string `json:"options"`
-	CorrectAnswer string   `json:"correct_answer"`
-	UserAnswer    string   `json:"user_answer"`
-	IsCorrect     bool     `json:"is_correct"`
-	Explanation   string   `json:"explanation,omitempty"`
+	ID            string       `json:"id"`
+	Text          string       `json:"text"`
+	Options       []string     `json:"options"`
+	CorrectAnswer string       `json:"correct_answer"`
+	UserAnswer    string       `json:"user_answer"`
+	IsCorrect     bool         `json:"is_correct"`
+	Explanation   string       `json:"explanation,omitempty"`
+	Diagram       *DiagramData `json:"diagram,omitempty"`
 }
 
 type ExplainQuizRequest struct {

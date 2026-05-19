@@ -4,53 +4,145 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/firebase/genkit/go/core"
 	"github.com/firebase/genkit/go/genkit"
 )
 
 type GenerateQuizInput struct {
-	Summary      string `json:"summary"`
+	RawText      string `json:"raw_text"`
 	NumQuestions int    `json:"num_questions"`
 }
 
+type DiagramData struct {
+	Type    string `json:"type"`    // "svg"
+	Content string `json:"content"` // SVG string
+}
+
 type QuizQuestion struct {
-	Question string   `json:"question"`
-	Options  []string `json:"options"`
-	Answer   string   `json:"answer"`
+	Question string       `json:"question"`
+	Options  []string     `json:"options"`
+	Answer   string       `json:"answer"`
+	Diagram  *DiagramData `json:"diagram,omitempty"`
 }
 
 type GenerateQuizOutput struct {
 	Questions []QuizQuestion `json:"questions"`
 }
 
+// maxChunkSize adalah batas karakter per chunk sebelum dikirim ke AI.
+// ~8000 char ≈ 2000 token konten — cukup detail tanpa membebani model.
+const maxChunkSize = 6000
+
 func RegisterGenerateQuizFlow(g *genkit.Genkit) *core.Flow[*GenerateQuizInput, *GenerateQuizOutput, struct{}] {
 	return genkit.DefineFlow(g, "generateQuiz",
 		func(ctx context.Context, input *GenerateQuizInput) (*GenerateQuizOutput, error) {
-			if input.Summary == "" {
-				return nil, fmt.Errorf("summary should not be empty")
+			if input.RawText == "" {
+				return nil, fmt.Errorf("raw_text tidak boleh kosong")
 			}
 			if input.NumQuestions <= 0 {
 				return nil, fmt.Errorf("num_questions harus lebih dari 0")
 			}
 
-			resp, err := generateWithGroq(buildQuizPrompt(input.Summary, input.NumQuestions))
-			if err != nil {
-				return nil, fmt.Errorf("failed to generate quiz: %w", err)
+			chunks := splitIntoChunks(input.RawText, maxChunkSize)
+			distribution := distributeQuestions(input.NumQuestions, len(chunks))
+
+			var allQuestions []QuizQuestion
+			for i, chunk := range chunks {
+				n := distribution[i]
+				if n == 0 {
+					continue
+				}
+
+				resp, err := generateText(buildQuizPrompt(chunk, n))
+				if err != nil {
+					return nil, fmt.Errorf("gagal generate soal chunk %d: %w", i+1, err)
+				}
+
+				output, err := parseQuizResponse(resp, n)
+				if err != nil {
+					return nil, fmt.Errorf("gagal parse soal chunk %d: %w", i+1, err)
+				}
+
+				allQuestions = append(allQuestions, output.Questions...)
 			}
 
-			// Parse JSON dari response AI
-			output, err := parseQuizResponse(resp, input.NumQuestions)
-			if err != nil {
-				return nil, fmt.Errorf("failed to parse response: %w", err)
+			if len(allQuestions) > input.NumQuestions {
+				allQuestions = allQuestions[:input.NumQuestions]
 			}
 
-			return output, nil
+			return &GenerateQuizOutput{Questions: allQuestions}, nil
 		},
 	)
 }
 
-func buildQuizPrompt(summary string, numQuestions int) string {
+// splitIntoChunks memotong teks menjadi beberapa bagian dengan ukuran maksimal chunkSize.
+// Potongan dilakukan di batas paragraf (baris kosong) agar konteks tidak terpotong di tengah kalimat.
+func splitIntoChunks(text string, chunkSize int) []string {
+	text = strings.TrimSpace(text)
+	if len(text) <= chunkSize {
+		return []string{text}
+	}
+
+	var chunks []string
+	for len(text) > 0 {
+		if len(text) <= chunkSize {
+			chunks = append(chunks, strings.TrimSpace(text))
+			break
+		}
+
+		// Cari paragraph break (\n\n) terdekat mundur dari posisi chunkSize
+		end := chunkSize
+		found := false
+		for pos := chunkSize; pos > chunkSize/2; pos-- {
+			if pos+1 < len(text) && text[pos] == '\n' && text[pos+1] == '\n' {
+				end = pos + 2
+				found = true
+				break
+			}
+		}
+		// Kalau tidak ketemu paragraph break, cari newline biasa
+		if !found {
+			for pos := chunkSize; pos > chunkSize/2; pos-- {
+				if text[pos] == '\n' {
+					end = pos + 1
+					found = true
+					break
+				}
+			}
+		}
+		// Hard cut kalau tidak ada newline sama sekali
+		if !found {
+			end = chunkSize
+		}
+
+		chunks = append(chunks, strings.TrimSpace(text[:end]))
+		text = strings.TrimSpace(text[end:])
+	}
+
+	return chunks
+}
+
+// distributeQuestions membagi total soal secara merata ke setiap chunk.
+// Sisa dibagi ke chunk-chunk pertama agar total tetap tepat.
+func distributeQuestions(total, numChunks int) []int {
+	if numChunks == 0 {
+		return nil
+	}
+	base := total / numChunks
+	remainder := total % numChunks
+	dist := make([]int, numChunks)
+	for i := range dist {
+		dist[i] = base
+		if i < remainder {
+			dist[i]++
+		}
+	}
+	return dist
+}
+
+func buildQuizPrompt(text string, numQuestions int) string {
 	return fmt.Sprintf(`Kamu adalah pembuat soal ujian perguruan tinggi yang berpengalaman. Tugasmu membuat soal ujian berkualitas tinggi yang benar-benar menguji pemahaman mahasiswa terhadap materi.
 
 TUGAS: Buat tepat %[1]d soal pilihan ganda berdasarkan materi di bawah ini.
@@ -84,6 +176,7 @@ ATURAN FORMAT:
   * Display formula: $$\int_a^b f(x)\,dx$$
   * Himpunan: $A = \{x \mid x \in \mathbb{N}\}$, Interval: $(-\infty, 2] \cup [3, \infty)$
   * Jika materi bukan sains/matematika, tulis teks biasa tanpa LaTeX
+- JANGAN sertakan field "diagram" — semua soal hanya berupa teks
 
 DISTRIBUSI JAWABAN BENAR (WAJIB DIIKUTI KETAT):
 - Jawaban benar HARUS terdistribusi merata: sekitar 25%% soal jawab A, 25%% jawab B, 25%% jawab C, 25%% jawab D
@@ -99,16 +192,15 @@ Kembalikan HANYA JSON tanpa penjelasan apapun, tanpa markdown, tanpa backtick, d
 {
   "questions": [
     {
-      "question": "Teks pertanyaan di sini?",
+      "question": "Teks pertanyaan?",
       "options": ["A. pilihan satu", "B. pilihan dua", "C. pilihan tiga", "D. pilihan empat"],
       "answer": "A"
     }
   ]
-}`, numQuestions, summary) // %[1]d = numQuestions (reused), %[2]s = summary
+}`, numQuestions, text)
 }
 
 func parseQuizResponse(raw string, numQuestions int) (*GenerateQuizOutput, error) {
-	// Bersihkan kalau AI masih tambahkan markdown
 	cleaned := cleanJSON(raw)
 
 	var output GenerateQuizOutput
@@ -120,7 +212,6 @@ func parseQuizResponse(raw string, numQuestions int) (*GenerateQuizOutput, error
 		return nil, fmt.Errorf("tidak ada soal yang dihasilkan")
 	}
 
-	// Validasi tiap soal
 	for i, q := range output.Questions {
 		if q.Question == "" {
 			return nil, fmt.Errorf("soal #%d tidak memiliki teks", i+1)
@@ -131,11 +222,9 @@ func parseQuizResponse(raw string, numQuestions int) (*GenerateQuizOutput, error
 		if q.Answer == "" {
 			return nil, fmt.Errorf("soal #%d tidak memiliki jawaban", i+1)
 		}
-		// Normalisasi answer ke huruf kapital
 		output.Questions[i].Answer = normalizeAnswer(q.Answer)
 	}
 
-	// Trim ke jumlah yang diminta — AI kadang menghasilkan lebih
 	if numQuestions > 0 && len(output.Questions) > numQuestions {
 		output.Questions = output.Questions[:numQuestions]
 	}
@@ -144,12 +233,10 @@ func parseQuizResponse(raw string, numQuestions int) (*GenerateQuizOutput, error
 }
 
 func cleanJSON(s string) string {
-	// Hapus markdown code block kalau ada
 	s = trimPrefix(s, "```json")
 	s = trimPrefix(s, "```")
 	s = trimSuffix(s, "```")
 
-	// Cari posisi { pertama dan } terakhir
 	start := -1
 	end := -1
 	for i, c := range s {
@@ -170,10 +257,9 @@ func normalizeAnswer(answer string) string {
 	if len(answer) == 0 {
 		return ""
 	}
-	// Ambil karakter pertama saja, jadikan uppercase
 	c := answer[0]
 	if c >= 'a' && c <= 'd' {
-		return string(c - 32) // lowercase ke uppercase
+		return string(c - 32)
 	}
 	return string(c)
 }

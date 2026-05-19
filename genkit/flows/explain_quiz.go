@@ -38,7 +38,7 @@ func RegisterExplainQuizFlow(g *genkit.Genkit) *core.Flow[*ExplainQuizInput, *Ex
 				return &ExplainQuizOutput{Explanations: []QuestionExplanation{}}, nil
 			}
 
-			resp, err := generateWithGroq(buildExplainPrompt(input.WrongQuestions, input.Summary))
+			resp, err := generateText(buildExplainPrompt(input.WrongQuestions, input.Summary))
 			if err != nil {
 				return nil, fmt.Errorf("failed to generate explanations: %w", err)
 			}

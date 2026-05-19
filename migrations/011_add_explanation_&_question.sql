@@ -1,0 +1,2 @@
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS explanation TEXT;
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS diagram TEXT;

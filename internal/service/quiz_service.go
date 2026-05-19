@@ -35,7 +35,7 @@ type QuizServiceContract interface {
 }
 
 type QuizAI interface {
-	GenerateQuiz(summary string, numQuestions int) (*pkgai.GenerateQuizOutput, error)
+	GenerateQuiz(rawText string, numQuestions int) (*pkgai.GenerateQuizOutput, error)
 	ExplainQuiz(wrongQuestions []pkgai.WrongQuestion, summary string) (*pkgai.ExplainQuizOutput, error)
 }
 
@@ -100,13 +100,13 @@ func (s *QuizService) Generate(ctx context.Context, userID string, req dto.Gener
 		return nil, ErrNotModuleOwner
 	}
 
-	// Summary harus sudah ada
-	if !module.IsSummarized || module.Summary == "" {
+	// RawText harus tersedia — diisi saat upload, sebelum summarize selesai
+	if module.RawText == "" {
 		return nil, ErrModuleNotSummarized
 	}
 
-	// Call Genkit generate quiz
-	result, err := s.aiClient.GenerateQuiz(module.Summary, req.NumQuestions)
+	// Call Genkit generate quiz dari teks asli PDF
+	result, err := s.aiClient.GenerateQuiz(module.RawText, req.NumQuestions)
 	if err != nil {
 		return nil, fmt.Errorf("gagal generate quiz: %w", err)
 	}
@@ -118,10 +118,17 @@ func (s *QuizService) Generate(ctx context.Context, userID string, req dto.Gener
 		if err != nil {
 			return nil, fmt.Errorf("gagal parse options: %w", err)
 		}
+		diagramJSON := ""
+		if q.Diagram != nil {
+			if b, err := json.Marshal(q.Diagram); err == nil {
+				diagramJSON = string(b)
+			}
+		}
 		questions = append(questions, domain.Question{
 			Text:          q.Question,
 			Options:       string(optionsJSON),
 			CorrectAnswer: q.Answer,
+			Diagram:       diagramJSON,
 		})
 	}
 
@@ -341,6 +348,17 @@ func (s *QuizService) Explain(ctx context.Context, userID string, quizID string)
 
 // --- Mapper helpers ---
 
+func parseDiagram(raw string) *dto.DiagramData {
+	if raw == "" {
+		return nil
+	}
+	var d dto.DiagramData
+	if err := json.Unmarshal([]byte(raw), &d); err != nil {
+		return nil
+	}
+	return &d
+}
+
 func toQuizResponse(quiz *domain.Quiz, moduleTitle string) *dto.QuizResponse {
 	questions := make([]dto.QuestionResponse, 0, len(quiz.Questions))
 	for _, q := range quiz.Questions {
@@ -350,6 +368,7 @@ func toQuizResponse(quiz *domain.Quiz, moduleTitle string) *dto.QuizResponse {
 			ID:      q.ID,
 			Text:    q.Text,
 			Options: options,
+			Diagram: parseDiagram(q.Diagram),
 		})
 	}
 	return &dto.QuizResponse{
@@ -376,6 +395,7 @@ func toQuizResultResponse(quiz *domain.Quiz) *dto.QuizResultResponse {
 			UserAnswer:    q.UserAnswer,
 			IsCorrect:     q.UserAnswer == q.CorrectAnswer,
 			Explanation:   q.Explanation,
+			Diagram:       parseDiagram(q.Diagram),
 		})
 	}
 	score := 0
