@@ -29,6 +29,7 @@ type QuizServiceContract interface {
 	GetHistory(ctx context.Context, userID string) ([]dto.QuizHistoryResponse, error)
 	GetHistoryByModule(ctx context.Context, userID string, moduleID string) ([]dto.QuizHistoryResponse, error)
 	GetResult(ctx context.Context, userID string, quizID string) (*dto.QuizResultResponse, error)
+	GetSession(ctx context.Context, userID string, quizID string) (*dto.QuizResponse, error)
 	Retry(ctx context.Context, userID string, quizID string) (*dto.QuizResponse, error)
 	Cancel(ctx context.Context, userID string, quizID string) error
 	Explain(ctx context.Context, userID string, quizID string) (*dto.QuizResultResponse, error)
@@ -222,6 +223,26 @@ func (s *QuizService) GetResult(ctx context.Context, userID string, quizID strin
 		return nil, ErrNotQuizOwner
 	}
 	return toQuizResultResponse(quiz), nil
+}
+
+// GetSession mengembalikan soal quiz yang masih pending TANPA kunci jawaban,
+// untuk memulihkan sesi pengerjaan saat localStorage browser kosong
+// (dibuka di browser/perangkat lain, cache dibersihkan, dll).
+func (s *QuizService) GetSession(ctx context.Context, userID string, quizID string) (*dto.QuizResponse, error) {
+	quiz, err := s.quizRepo.FindByID(ctx, quizID)
+	if err != nil {
+		return nil, err
+	}
+	if quiz == nil {
+		return nil, ErrQuizNotFound
+	}
+	if quiz.UserID != userID {
+		return nil, ErrNotQuizOwner
+	}
+	if quiz.Status != domain.QuizStatusPending {
+		return nil, ErrQuizAlreadyDone
+	}
+	return toQuizResponse(quiz, quiz.Module.Title), nil
 }
 
 // Retry — buat quiz baru dari modul yang sama (soal berbeda karena AI generate ulang)

@@ -129,6 +129,28 @@ func (h *QuizHandler) GetResult(c *fiber.Ctx) error {
 	return response.OK(c, "berhasil", result)
 }
 
+// GET /api/v1/quiz/:id/session — soal quiz pending tanpa kunci jawaban
+func (h *QuizHandler) GetSession(c *fiber.Ctx) error {
+	userID := c.Locals("userID").(string)
+	quizID := c.Params("id")
+
+	result, err := h.quizService.GetSession(c.Context(), userID, quizID)
+	if err != nil {
+		if errors.Is(err, service.ErrQuizNotFound) {
+			return response.NotFound(c, err.Error())
+		}
+		if errors.Is(err, service.ErrNotQuizOwner) {
+			return response.Unauthorized(c, err.Error())
+		}
+		if errors.Is(err, service.ErrQuizAlreadyDone) {
+			return response.BadRequest(c, err.Error())
+		}
+		return response.InternalError(c, "gagal mengambil sesi quiz")
+	}
+
+	return response.OK(c, "berhasil", result)
+}
+
 // DELETE /api/v1/quiz/:id
 func (h *QuizHandler) Cancel(c *fiber.Ctx) error {
 	userID := c.Locals("userID").(string)

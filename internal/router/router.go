@@ -112,6 +112,7 @@ func Setup(app *fiber.App) {
 	quiz.Get("/history", quizHandler.GetHistory)
 	quiz.Get("/history/module/:moduleId", quizHandler.GetHistoryByModule)
 	quiz.Get("/:id/result", quizHandler.GetResult)
+	quiz.Get("/:id/session", quizHandler.GetSession)
 
 	// --- Review routes ---
 	api.Get("/reviews", reviewHandler.GetAll)

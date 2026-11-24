@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/firebase/genkit/go/core"
@@ -32,8 +33,10 @@ type GenerateQuizOutput struct {
 }
 
 // maxChunkSize adalah batas karakter per chunk sebelum dikirim ke AI.
-// ~8000 char ≈ 2000 token konten — cukup detail tanpa membebani model.
-const maxChunkSize = 6000
+// Gemini punya context window besar, jadi chunk dibuat besar (~15k token)
+// supaya jumlah request kecil — penting di free tier (5 request/menit).
+// Modul ~270k karakter → ±5 request, bukan 20+.
+const maxChunkSize = 60000
 
 func RegisterGenerateQuizFlow(g *genkit.Genkit) *core.Flow[*GenerateQuizInput, *GenerateQuizOutput, struct{}] {
 	return genkit.DefineFlow(g, "generateQuiz",
@@ -55,14 +58,23 @@ func RegisterGenerateQuizFlow(g *genkit.Genkit) *core.Flow[*GenerateQuizInput, *
 					continue
 				}
 
-				resp, err := generateText(buildQuizPrompt(chunk, n))
-				if err != nil {
-					return nil, fmt.Errorf("gagal generate soal chunk %d: %w", i+1, err)
-				}
-
-				output, err := parseQuizResponse(resp, n)
-				if err != nil {
-					return nil, fmt.Errorf("gagal parse soal chunk %d: %w", i+1, err)
+				// Output model kadang JSON-nya rusak; generate ulang chunk sekali sebelum menyerah.
+				var output *GenerateQuizOutput
+				const maxParseAttempts = 2
+				for try := 1; try <= maxParseAttempts; try++ {
+					log.Printf("[generateQuiz] chunk %d/%d: generate %d soal (percobaan %d)", i+1, len(chunks), n, try)
+					resp, err := generateText(buildQuizPrompt(chunk, n))
+					if err != nil {
+						return nil, fmt.Errorf("gagal generate soal chunk %d: %w", i+1, err)
+					}
+					output, err = parseQuizResponse(resp, n)
+					if err == nil {
+						break
+					}
+					log.Printf("[generateQuiz] chunk %d/%d: hasil tidak valid (%v)", i+1, len(chunks), err)
+					if try == maxParseAttempts {
+						return nil, fmt.Errorf("gagal parse soal chunk %d: %w", i+1, err)
+					}
 				}
 
 				allQuestions = append(allQuestions, output.Questions...)
@@ -248,9 +260,46 @@ func cleanJSON(s string) string {
 		}
 	}
 	if start != -1 && end != -1 && end > start {
-		return s[start : end+1]
+		s = s[start : end+1]
 	}
-	return s
+	return escapeControlCharsInStrings(s)
+}
+
+// escapeControlCharsInStrings meng-escape newline/tab/CR mentah yang muncul di
+// dalam string literal JSON. Model kadang menulis potongan kode multi-baris di
+// teks soal tanpa escape, yang membuat json.Unmarshal gagal.
+func escapeControlCharsInStrings(s string) string {
+	var b strings.Builder
+	b.Grow(len(s))
+	inString, escaped := false, false
+	for _, r := range s {
+		if inString {
+			switch {
+			case escaped:
+				escaped = false
+			case r == '\\':
+				escaped = true
+			case r == '"':
+				inString = false
+			case r == '\n':
+				b.WriteString(`\n`)
+				continue
+			case r == '\r':
+				b.WriteString(`\r`)
+				continue
+			case r == '\t':
+				b.WriteString(`\t`)
+				continue
+			case r < 0x20:
+				fmt.Fprintf(&b, `\u%04x`, r)
+				continue
+			}
+		} else if r == '"' {
+			inString = true
+		}
+		b.WriteRune(r)
+	}
+	return b.String()
 }
 
 func normalizeAnswer(answer string) string {

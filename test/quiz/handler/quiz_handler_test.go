@@ -63,6 +63,14 @@ func (m *MockQuizService) GetResult(ctx context.Context, userID string, quizID s
 	return nil, args.Error(1)
 }
 
+func (m *MockQuizService) GetSession(ctx context.Context, userID string, quizID string) (*dto.QuizResponse, error) {
+	args := m.Called(ctx, userID, quizID)
+	if args.Get(0) != nil {
+		return args.Get(0).(*dto.QuizResponse), args.Error(1)
+	}
+	return nil, args.Error(1)
+}
+
 func (m *MockQuizService) Retry(ctx context.Context, userID string, quizID string) (*dto.QuizResponse, error) {
 	args := m.Called(ctx, userID, quizID)
 	if args.Get(0) != nil {

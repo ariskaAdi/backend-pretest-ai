@@ -12,8 +12,8 @@ import (
 	appconfig "backend-pretest-ai/config"
 )
 
-const groqAPIURL = "https://api.groq.com/openai/v1/chat/completions"
-const groqVisionModel = "llama-3.2-11b-vision-preview"
+// Model Gemini untuk OCR gambar (PDF berbasis scan). Override via env GEMINI_VISION_MODEL.
+const defaultGeminiVisionModel = "gemini-3.5-flash"
 
 type genkitClient struct {
 	baseURL    string
@@ -143,32 +143,30 @@ type ExplainQuizOutput struct {
 	Explanations []QuestionExplanation `json:"explanations"`
 }
 
-// VisionExtract mengirim gambar base64 ke Groq vision model dan kembalikan teks hasil OCR.
+// VisionExtract mengirim gambar base64 ke Gemini dan kembalikan teks hasil OCR.
 // Dipanggil via pdfpkg.VisionExtractor saat PDF berbasis gambar.
 func (g *genkitClient) VisionExtract(imageBase64 string, mimeType string) (string, error) {
-	apiKey := os.Getenv("GROQ_API_KEY")
+	apiKey := os.Getenv("GEMINI_API_KEY")
 	if apiKey == "" {
-		return "", fmt.Errorf("GROQ_API_KEY tidak di-set")
+		return "", fmt.Errorf("GEMINI_API_KEY tidak di-set")
+	}
+	model := os.Getenv("GEMINI_VISION_MODEL")
+	if model == "" {
+		model = defaultGeminiVisionModel
 	}
 
 	payload := map[string]any{
-		"model": groqVisionModel,
-		"messages": []map[string]any{
+		"contents": []map[string]any{
 			{
-				"role": "user",
-				"content": []map[string]any{
-					{
-						"type": "image_url",
-						"image_url": map[string]string{
-							"url": fmt.Sprintf("data:%s;base64,%s", mimeType, imageBase64),
-						},
-					},
-					{
-						"type": "text",
-						"text": "Ekstrak SEMUA teks dari gambar ini persis seperti yang tertulis. Pertahankan struktur paragraf, judul, dan daftar. Jangan tambahkan penjelasan — hanya teks dari gambar.",
-					},
+				"parts": []map[string]any{
+					{"inline_data": map[string]string{"mime_type": mimeType, "data": imageBase64}},
+					{"text": "Ekstrak SEMUA teks dari gambar ini persis seperti yang tertulis. Pertahankan struktur paragraf, judul, dan daftar. Jangan tambahkan penjelasan — hanya teks dari gambar."},
 				},
 			},
+		},
+		"generationConfig": map[string]any{
+			"temperature":    0,
+			"thinkingConfig": map[string]int{"thinkingBudget": 0},
 		},
 	}
 
@@ -177,36 +175,45 @@ func (g *genkitClient) VisionExtract(imageBase64 string, mimeType string) (strin
 		return "", fmt.Errorf("gagal encode vision request: %w", err)
 	}
 
-	req, err := http.NewRequest(http.MethodPost, groqAPIURL, bytes.NewReader(body))
-	if err != nil {
-		return "", err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+apiKey)
+	url := fmt.Sprintf("https://generativelanguage.googleapis.com/v1beta/models/%s:generateContent?key=%s", model, apiKey)
 
-	resp, err := g.httpClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("gagal call Groq vision: %w", err)
-	}
-	defer resp.Body.Close()
+	delays := []time.Duration{2 * time.Second, 5 * time.Second, 10 * time.Second}
+	for attempt := 0; ; attempt++ {
+		req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+		if err != nil {
+			return "", err
+		}
+		req.Header.Set("Content-Type", "application/json")
 
-	raw, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("Groq vision error %d: %s", resp.StatusCode, string(raw))
-	}
+		resp, err := g.httpClient.Do(req)
+		if err != nil {
+			return "", fmt.Errorf("gagal call Gemini vision: %w", err)
+		}
+		raw, _ := io.ReadAll(resp.Body)
+		resp.Body.Close()
 
-	var result struct {
-		Choices []struct {
-			Message struct {
-				Content string `json:"content"`
-			} `json:"message"`
-		} `json:"choices"`
-	}
-	if err := json.Unmarshal(raw, &result); err != nil || len(result.Choices) == 0 {
-		return "", fmt.Errorf("gagal parse vision response")
-	}
+		if (resp.StatusCode == http.StatusServiceUnavailable || resp.StatusCode == http.StatusTooManyRequests) && attempt < len(delays) {
+			time.Sleep(delays[attempt])
+			continue
+		}
+		if resp.StatusCode != http.StatusOK {
+			return "", fmt.Errorf("Gemini vision error %d: %s", resp.StatusCode, string(raw))
+		}
 
-	return result.Choices[0].Message.Content, nil
+		var result struct {
+			Candidates []struct {
+				Content struct {
+					Parts []struct {
+						Text string `json:"text"`
+					} `json:"parts"`
+				} `json:"content"`
+			} `json:"candidates"`
+		}
+		if err := json.Unmarshal(raw, &result); err != nil || len(result.Candidates) == 0 || len(result.Candidates[0].Content.Parts) == 0 {
+			return "", fmt.Errorf("gagal parse vision response")
+		}
+		return result.Candidates[0].Content.Parts[0].Text, nil
+	}
 }
 
 func (g *genkitClient) ExplainQuiz(wrongQuestions []WrongQuestion, summary string) (*ExplainQuizOutput, error) {
